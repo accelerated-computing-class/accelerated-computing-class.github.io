@@ -51,7 +51,7 @@ The whole class gathers for a 2-hour in-person session to discuss the week’s l
 You turn in your final submission for the lab, usually containing a few code files and a brief write-up formatted as a PDF.</p>
 </li>
 </ol>
-<p>For the lab checkpoint and final submission, you’ll be submitting your materials through <a href="/fall24/https://www.gradescope.com/courses/849967">Gradescope</a>.</p>
+<p>For the lab checkpoint and final submission, you’ll be submitting your materials through <a href="https://www.gradescope.com/courses/849967">Gradescope</a>.</p>
 
 <h3>Getting the Starter Code</h3>
 <p>You can get the starter code by cloning the lab repository:</p>
@@ -270,8 +270,8 @@ for (let i = 0; i < 32; i++) {
 <tr><td><code>_mm512_sub_ps(...)</code></td><td>Subtract fp vectors element-wise</td></tr>
 <tr><td><code>_mm512_mul_ps(...)</code></td><td>Multiply fp two vectors element-wise</td></tr>
 <tr><td><code>_mm512_cmp_ps_mask(...)</code></td><td>Generate mask based on the element-wise comparison of two fp vectors</td></tr>
-<tr><td><code>_mm512_mask_add_epi32(...)</code></td><td>Add two int vectors element-wise according to the mask</td></tr>
-<tr><td><code>_mm512_storeu_si512(...)</code></td><td>Convert an int vector into a C array of continuous elements</td></tr>
+<tr><td><code>_mm512_mask_add_epi32(...)</code></td><td>Add two int vectors element-wise according to the mask (<a href="https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm512_mask_add_epi32&amp;ig_expand=6550,96">more info</a>)</td></tr>
+<tr><td><code>_mm512_storeu_si512(...)</code></td><td>Write all 16 words of a vector contiguously into memory at a given address</td></tr>
 </tbody></table>
 </div>
 <p>Don’t worry too much if you get stuck at first – we’ll have a chance during live lab to help each other figure out how to get un-stuck.</p>
