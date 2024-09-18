@@ -47,7 +47,7 @@
 </span></pre>
 <h3>Changes to Starter Code vs Lab 1</h3>
 <p>For Lab 2, you should be aware that we’ve made a few changes to the reference implementation of the Mandelbrot algorithm in the starter code, relative to what was in the starter code for Lab 1.</p>
-<p>First of all, the line <code>float y = w - x2 - y2 + cy;</code> is now <code>float y = w - (x2 + y2) + cy;</code>. This may seem like a trivial change, but it speeds up the algorithm by allowing the compiler to reuse the expression <code>x2 + y2</code> computed in the loop condition, and also slightly alters the algorithm’s output due to the (maddening) non-associativity of floating-point math.</p>
+<p>First of all, because of on one of the issues we discussed in last week’s live lab, the line <code>float y = w - x2 - y2 + cy;</code> is now <code>float y = w - (x2 + y2) + cy;</code>. This may seem like a trivial change, but it speeds up the algorithm by allowing the compiler to reuse the expression <code>x2 + y2</code> computed in the loop condition, and also slightly alters the algorithm’s output due to the (maddening) non-associativity of floating-point math.</p>
 <p>Additionally, we’ve adjusted the parameters of the Mandelbrot image we’re generating to be more ambitious. The image is now:</p>
 <ul>
 <li>
@@ -63,7 +63,7 @@
 <p>To control what part of the Mandelbrot set we’re zoomed in to, we’ve added three new constant definitions in the starter code: <code>window_zoom</code>, <code>window_x</code>, and <code>window_y</code>. If you copy any code you wrote for Lab 1 for use in this lab, you’ll need to adjust it to refer to these new constants instead of using the hard-coded window parameters we used in Lab 1.</p>
 <h2>Introduction</h2>
 <h3>Goals for This Lab</h3>
-<p>In <a href="/fall24/labs/lab1">Lab 1</a>, we looked at ways of using <em>vector parallelism</em> to accelerate an algorithm for rendering the Mandelbrot fractal. We also promised that in the following week, we would look at ways to add more levels of parallelism. The time has come to start exploring those additional levels of parallelism!</p>
+<p>In <a href="/fall24/labs/lab1">Lab 1</a>, we looked at ways of using <em>vector parallelism</em> to accelerate an algorithm for rendering the Mandelbrot fractal. We also promised that later we would look at ways to add more levels of parallelism. The time has come!</p>
 <p>In this lab, we’ll be starting from our vector-parallel Mandelbrot implementation and adding three new kinds of parallelism:</p>
 <ol>
 <li>
@@ -79,12 +79,12 @@
 <p>Just like we did in Lab 1, throughout this lab we’ll be focusing on the <strong>correspondences</strong> between the different levels of parallelism which exist in CPUs and GPUs. As we’ll see, the analogies between CPU and GPU hardware remain quite close even as we scale up our programs to start exploiting instruction-level, multi-core, and multi-threaded parallelism.</p>
 <p>In this lab, we’ll also finally start to see our GPU programs overtaking our CPU programs in performance, as we write programs which are able to use the GPU to its full potential.</p>
 <h3>A Note on Terminology: What is a “Thread?” (And What is a “Warp?”)</h3>
-<p>Before we get into the details of the lab, we want to clarify some terminology which can become very confusing when talking about GPUs.</p>
+<p>Before we get into the details of the lab, we want to clarify some terminology which can become overloaded and confusing when talking about GPUs.</p>
 
-<p>As you might have guessed from the use of the variable <code>threadIdx.x</code> in Lab 1, NVIDIA uses the word “thread” to refer to <em>a single instance of the program defined by your kernel</em>. But because the GPU executes all instructions in a SIMD fashion across 32 instances of your program at a time, what NVIDIA refers to as a “thread” is much closer to what we’d refer to as a <strong>vector lane</strong> on a CPU.</p>
-<p>By contrast, NVIDIA uses the term “<a href="https://en.wikipedia.org/wiki/Warp_and_weft">warp</a>” to refer to what we’d call a “thread” on a CPU: a single stream of instructions which logically executes sequentially, and that stream’s associated register state. Note that because all instructions executed on an NVIDIA GPU are executed in 32-wide SIMD fashion, a “warp” consists of 32 of the-things-NVIDIA-calls-threads.</p>
+<p>As you might have guessed from the name of the special variable <code>threadIdx.x</code> in Lab 1, NVIDIA uses the word “thread” to refer to <em>a single instance of the program defined by your kernel</em>. But because the GPU executes all instructions in a SIMD fashion across 32 instances of your program at a time, what NVIDIA refers to as a “thread” is much closer to what we’d refer to as a <strong>vector lane</strong> on a CPU.</p>
+<p>By contrast, NVIDIA uses the term “<a href="https://en.wikipedia.org/wiki/Warp_and_weft">warp</a>” to refer to what we’d traditionally call a “thread”: a single stream of instructions which logically executes sequentially, and that instruction stream’s associated state (registers, etc.). Note that because all instructions executed on an NVIDIA GPU are executed in 32-wide SIMD fashion, a “warp” consists of 32 of the things-NVIDIA-calls-“threads”.</p>
 <p>For the purposes of this course, we will try to <strong>always</strong> explicitly use the term “<strong>CUDA thread</strong>” when referring to the things NVIDIA calls threads, and we encourage you to do the same during live lab, in write-ups, on Piazza, etc.</p>
-<p>When we talk about “threads” generically, as in the phrase “multi-threading,” you should understand that in the context of GPUs we’re referring to the same thing that NVIDIA calls “warps.”</p>
+<p>When we talk about “threads” generically, as in the phrase “multi-threading,” you should understand that in the context of GPUs we’re referring to the thing that NVIDIA calls “warps.”</p>
 <p>We can summarize the situation in the following table of correspondences:</p>
 <div class="table-container"><table><thead><tr><th>GPU Concept</th><th>CPU Concept</th></tr></thead><tbody>
 <tr><td>CUDA Thread</td><td>Vector Lane</td></tr>
@@ -122,8 +122,8 @@
 <p><img src="images/gpu_schematic.svg" alt="GPU schematic" /></p>
 <h2>Part 1: Instruction-Level Parallelism</h2>
 <p>In Lab 1, the programs we wrote each made use of only a <strong>single thread</strong>, running on a <strong>single core</strong>. Later in this lab, we’ll be scaling up our programs to make use of all the cores on our CPU and GPU. But first, we’ll look at a way that we can exploit <strong>more parallelism</strong> in our vector Mandelbrot program <strong>using just the single thread that we already have.</strong></p>
-<p>To find more opportunities for parallelism within our single thread, we’ll make use of what is known as <em><a href="https://en.wikipedia.org/wiki/Instruction-level_parallelism">instruction-level parallelism (ILP)</a></em>. Instruction-level parallelism refers to cases where a processor is able to exploit <strong>independence</strong> between instructions within one instruction stream in order to run them in parallel on different hardware resources.</p>
-<p>The exact microarchitectural details of when and how the processor can exploit ILP differ between the CPU and GPU <sup class="footnote-reference"><a href="#2">2</a></sup>, but the implications for software performance engineering are similar on both platforms. In general, sections of code with <strong>sequential dependencies</strong> like the following will not be able to exploit ILP:</p>
+<p>To find more opportunities for parallelism within our single thread, we’ll make use of what is known as <em><a href="https://en.wikipedia.org/wiki/Instruction-level_parallelism">instruction-level parallelism (ILP)</a></em>. Instruction-level parallelism refers to cases where a processor is able to exploit independence between instructions <strong>within one instruction stream</strong> in order to run them in parallel on different hardware resources.</p>
+<p>The exact microarchitectural details of when and how a core can exploit ILP differ between our CPU and GPU <sup class="footnote-reference"><a href="#2">2</a></sup>, but the implications for software performance engineering are similar on both platforms. In general, sections of code with <strong>sequential dependencies</strong> like the following will not be able to exploit ILP:</p>
 <pre><span class="highlight-source highlight-c++"><span class="highlight-comment highlight-line highlight-double-slash highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">//</span> No ILP:
 </span><span class="highlight-storage highlight-type highlight-c">float</span> a0 <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> ... <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
 <span class="highlight-storage highlight-type highlight-c">float</span> a1 <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> a0 <span class="highlight-keyword highlight-operator highlight-c">*</span> a0<span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
@@ -137,16 +137,17 @@
 <span class="highlight-storage highlight-type highlight-c">float</span> b2 <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> c2 <span class="highlight-keyword highlight-operator highlight-c">*</span> c2<span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
 <span class="highlight-storage highlight-type highlight-c">float</span> b3 <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> c3 <span class="highlight-keyword highlight-operator highlight-c">*</span> c3<span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
 </span></pre>
-<p>Depending on the latency and throughput with which the processor can execute a given type of instruction, running multiple instructions in parallel is often necessary in order to drive the hardware at its peak throughput. For example, on our A4000 GPU, basic 32-bit floating point arithmetic instructions like multiplies and adds…</p>
+<p>Depending on the latency and throughput with which the processor can execute a given type of instruction, running multiple instructions in parallel is often necessary in order to drive the hardware at its peak throughput. For example, on our A4000 GPU, basic 32-bit floating point arithmetic instructions like multiplies and adds:</p>
 <ol>
 <li>
-<p>…execute with a <strong>latency</strong> of <strong>4 cycles per instruction</strong>… <sup class="footnote-reference"><a href="#latency-source">3</a></sup></p>
+<p>execute with a <strong>latency</strong> of <strong>4 cycles per instruction</strong>… <sup class="footnote-reference"><a href="#latency-source">3</a></sup></p>
 </li>
 <li>
-<p>…but can execute with a <strong>peak throughput</strong> of <strong>1 instruction per cycle per warp scheduler</strong>. <sup class="footnote-reference"><a href="#throughput-source">4</a></sup></p>
+<p>but can execute with a peak <strong>throughput</strong> of <strong>1 instruction per cycle per warp scheduler</strong>. <sup class="footnote-reference"><a href="#throughput-source">4</a></sup></p>
 </li>
 </ol>
 <p>This means that to execute 32-bit floating point multiplies and adds at peak throughput, you need to have <strong>at least 4</strong> independent multiply or add instructions in flight <strong>simultaneously</strong> at any given time. You can think of e.g. the floating point multiplier as a pipeline with 4 stages, which can only run at its peak throughput if you’re able to keep each of those 4 pipeline stages busy processing a different instruction on each cycle.</p>
+
 <p>Revisiting our Mandelbrot program, we can analyze its inner loop to see what kind of opportunities for ILP it exposes to the processor:</p>
 <pre><span class="highlight-source highlight-c++"><span class="highlight-keyword highlight-control highlight-c++">while</span> <span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span>x2 <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">+</span> y2 <span class="highlight-keyword highlight-operator highlight-comparison highlight-c">&lt;=</span> <span class="highlight-constant highlight-numeric highlight-c++">4.0f</span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">&amp;&amp;</span> iters <span class="highlight-keyword highlight-operator highlight-comparison highlight-c">&lt;</span> max_iters<span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span> <span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-begin highlight-c++">{</span>
     <span class="highlight-storage highlight-type highlight-c">float</span> x <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> x2 <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">-</span> y2 <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">+</span> cx<span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
@@ -274,7 +275,7 @@
 <p><strong>All the warps in a given block are guaranteed to run on the same SM.</strong> It is possible to have multiple blocks run on the same SM simultaneously, but not vice-versa.</p>
 </li>
 </ol>
-<p>Like SMs themselves, blocks exists mostly because of the memory system; blocks define the level at which warps share certain memory resources on the software side, in the same way that SMs define the level at which warp schedulers share certain memory resources on the hardware side. In this lab, we’re not concerned with the memory system, but we hope providing this context helps provide some clarity on why blocks exist in the first place.</p>
+<p>Like SMs themselves, blocks exist mostly because of the memory system; blocks define from the software side the level at which warps share certain memory resources, in the same way that, on the hardware side, SMs define the level at which warp schedulers share certain memory resources. (In this lab, we’re not concerned with the memory system, but we hope providing this context helps provide some clarity about why blocks exist in the first place.)</p>
 <p>The existence of blocks means that if you want to use more than one SM, you need to launch more than one block. In our case, we want to use all 48 SMs on the GPU, and all 4 warp schedulers on each SM. One reasonable way to achieve this is to launch a kernel with launch configuration <code>&lt;&lt;&lt;48, 4 * 32&gt;&gt;&gt;</code>, which will assign one block to each SM, and then assign the 4 warps inside that block to the SM’s 4 warp schedulers.</p>
 <p>This gives us almost all the pieces we need to scale up our Mandelbrot kernel to use every warp scheduler on the GPU. There are just two more things you strictly need to know:</p>
 <ol>
@@ -351,7 +352,7 @@
 <p><a href="https://docs.nvidia.com/cuda/turing-tuning-guide/index.html#instruction-scheduling">Source</a> for the 4-cycle latency figure. The linked document was written for slightly older hardware than we’re using, but should still apply.</p>
 </div>
 <div class="footnote-definition" id="throughput-source"><sup class="footnote-definition-label">4</sup>
-<p><a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#arithmetic-instructions">Source</a> for the 1 instruction per cycle throughput figure. In the linked table, the “compute capability” column corresponding to the specific GPU we’re using is “8.6.”</p>
+<p><a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#arithmetic-instructions">Source</a> for the 1 instruction per cycle throughput figure. In the linked table, the “compute capability” column corresponding to the specific GPU we’re using is “8.6.” Note that this table lists throughput per <strong>SM</strong>, which is the aggregate throughput across its 4 warp schedulers. Generally dividing these numbers by 4 gives the throughput per warp scheduler.</p>
 </div>
 <div class="footnote-definition" id="cta"><sup class="footnote-definition-label">5</sup>
 <p>“Blocks” are sometimes also called “cooperative thread arrays” (CTAs), and NVIDIA’s documentation uses the two terms interchangeably.</p>
