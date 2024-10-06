@@ -1,0 +1,265 @@
+<!DOCTYPE html><html lang="en-us"><head><meta charset="utf-8"><title>6.S894</title><base href="/fall24/labs/lab5/"><meta content="width=device-width, initial-scale=1" name="viewport"><style>@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall24/assets/font/tex-gyre-heros/texgyreheros-regular.otf") format("opentype");
+    font-weight: regular;
+    font-style: regular;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall24/assets/font/tex-gyre-heros/texgyreheros-bold.otf") format("opentype");
+    font-weight: bold;
+    font-style: regular;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall24/assets/font/tex-gyre-heros/texgyreheros-italic.otf") format("opentype");
+    font-weight: regular;
+    font-style: italic;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall24/assets/font/tex-gyre-heros/texgyreheros-bolditalic.otf") format("opentype");
+    font-weight: bold;
+    font-style: italic;
+}</style><link href="/fall24/assets/main.css" rel="stylesheet"><link crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css" integrity="sha384-wcIxkf4k558AjM3Yz3BBFQUbk/zgIYC2R0QpeeYb+TwlBVMrlgLqwRjRtGZiK7ww" rel="stylesheet"><link href="/fall24/assets/favicon.png" rel="icon" type="image/png"></head><body><header><nav><h1><a href="/fall24/">6.S894</a></h1>
+<p><a href="/fall24/calendar">Calendar</a></p>
+<p><a href="/fall24/labs">Labs</a></p>
+<p><a href="/fall24/syllabus">Syllabus</a></p>
+<p><a href="/fall24/resources">Resources</a></p>
+<p><a href="/fall24/contact">Contact</a></p>
+<p><a href="/fall24/piazza">Piazza</a></p>
+</nav></header><main><h1>Lab 5: Matrix Multiply – Improved Scheduling</h1>
+<h2>Prologue: Logistics</h2>
+<h3>Due Dates</h3>
+<p>For this lab, you’ll be turning in the following deliverables:</p>
+<ul>
+<li>
+<p><strong>Checkpoint:</strong> Due Monday, October 7, 11:59pm (<a href="https://www.gradescope.com/courses/849967/assignments/5109699/">Gradescope</a>)</p>
+</li>
+<li>
+<p><strong>Final Submission:</strong> Due <em>Tuesday</em>, October 15, 11:59pm (<a href="https://www.gradescope.com/courses/849967/assignments/5109701/">Gradescope</a>)</p>
+</li>
+</ul>
+<p>Note the unusual schedule for the final submission: to accommodate the fact that we won’t be holding live lab the week of October 14, Labs 5 and 6 will each span roughly a <strong>week and a half</strong>.</p>
+<p>See the “Deliverables” section at the end of this document for more information on what you’ll be turning in.</p>
+<h3>Starter Code</h3>
+<p>You can get the starter code for this lab by cloning the <a href="https://github.com/accelerated-computing-class/lab5">lab repository</a>:</p>
+<pre><span class="highlight-source highlight-shell highlight-bash"><span class="highlight-meta highlight-function-call highlight-shell"><span class="highlight-variable highlight-function highlight-shell">git</span></span><span class="highlight-meta highlight-function-call highlight-arguments highlight-shell"> clone git@github.com:accelerated-computing-class/lab5.git</span>
+</span></pre>
+<h2>Introduction</h2>
+<h3>Goals for This Lab</h3>
+<p>In <a href="/fall24/labs/lab4">Lab 4</a>, we started developing an implementation of <strong>matrix multiplication</strong>, and looked at how to design our matrix multiplication kernel to exploit data reuse at the level of the L1 SRAM and the register file. In this lab, we’ll be optimizing our implementation further, mostly by improving the <strong>scheduling</strong> of our computation to increase hardware utilization.</p>
+<p>This lab has two parts:</p>
+<ul>
+<li>
+<p>First, we’ll try to <strong>improve the performance</strong> of our kernel on the <code>3072 * 3072 * 3072</code> problem size that we’ve already seen. This part of the lab will be relatively open-ended, but we’ll have some suggestions for things you might want to try.</p>
+</li>
+<li>
+<p>Second, we’ll extend our implementation to be better at handling <strong>varying problem sizes</strong>, and analyze the ways in which problem size affects performance.</p>
+</li>
+</ul>
+<h2>Part 1: Improving Performance</h2>
+<p>Our first goal in this lab will be to improve the performance of our implementation from Lab 4, as measured in the same setting in which we previously tested it: multiplying <strong>square matrices</strong> with side length <strong><code>3072</code></strong>. Our goal will be to reduce our kernel’s run time to <strong>under 7 ms</strong>:</p>
+<blockquote>
+<p><strong>Deliverable:</strong> In the file <code>matmul_2.cu</code>, implement the functions <code>matmul_improved</code> and <code>launch_matmul_improved</code> so that they can complete the <code>3072 * 3072 * 3072</code> benchmark in <strong>7 ms or less</strong>. You can feel free to use any techniques you like to try to achieve this run time target.</p>
+</blockquote>
+<p>(If your implementation from Lab 4 already runs in under 7 ms, you don’t need to do anything, although we encourage you to try to optimize it further if you want.)</p>
+<p>Depending on exactly how you wrote your implementation for Lab 4, your kernel’s run time may be bottlenecked on different things. We don’t know exactly what you’ll need to do to make your specific implementation run faster, but we do have some suggestions for things you can try that may help.</p>
+<h3>Suggestion: Revisiting Issues from Lab 4</h3>
+<p>In Lab 4, we discussed a number of factors that could affect the performance of your kernel. Before trying any more sophisticated techniques to improve performance, you may want to check that your kernel is already doing well according to these criteria:</p>
+<ol>
+<li>
+<p><strong>Maximize data reuse:</strong> Try to tune the numerical parameters of your kernel so that you minimize the number of global-to-L1 and L1-to-register loads you need to perform.</p>
+</li>
+<li>
+<p><strong>Avoid register spills:</strong> Stack variables can spill from registers to local memory if they exceed the capacity of the register file, or if you access them in the wrong way (see <a href="/fall24/labs/lab4">“Using Registers Effectively”</a>).</p>
+</li>
+<li>
+<p><strong>Avoid bank conflicts:</strong> Whenever multiple lanes in a warp try to simultaneously access different shared memory addresses mapping to the same word index mod 32, you will pay a performance penalty (see <a href="/fall24/labs/lab4">“Using L1 Effectively”</a>).</p>
+</li>
+<li>
+<p><strong>Avoid touching multiple cache lines:</strong> Whenever multiple lanes in a warp try to simultaneously access addresses on different L1 cache lines (when using the L1 SRAM as an implicit cache), you will pay a performance penalty (see <a href="/fall24/labs/lab4">“Using L1 Effectively”</a>).</p>
+</li>
+</ol>
+<h3>Suggestion: Hiding Memory Access Latency</h3>
+<p>In Lab 4, we mostly discussed the <strong>bandwidth</strong> of different memory resources (DRAM, L1) as a limiting factor in determining the performance achievable with different kernel designs.</p>
+<p>Orthogonal to bandwidth, it is sometimes also important to consider the <strong>latency</strong> of individual memory requests. As a general heuristic, for GPUs:</p>
+<ol>
+<li>
+<p>Requests to <strong>global memory</strong> typically complete with a latency of <strong>hundreds of cycles</strong>.</p>
+</li>
+<li>
+<p>Requests to <strong>L1</strong> typically complete with a latency of <strong>dozens of cycles</strong>.</p>
+</li>
+</ol>
+<p>(Frustratingly, precise values for these latency numbers are difficult to find online. The course staff are currently in the process of trying to conduct experiments to measure them empirically for our particular GPU.)</p>
+<p>The fact that memory requests execute with high latencies means that it’s important to not create long chains of <strong>serial dependencies</strong> between small memory requests and small units of computation. Instead, it’s better to fire off a <strong>batch</strong> of memory requests all at once, and then compute on its results all at once.</p>
+<p><img src="images/serial_vs_batched.svg" alt="Serial vs Batched Memory Accesses and Computation" /></p>
+<p>Concretely, this means that if you’re explicitly loading data from global memory to shared memory in your kernel, you may want to consider <strong>loading data from multiple positions along the <code>k</code> dimension</strong> all at once, rather than loading single columns/rows of the A/B matrices at a time.</p>
+<p>If you’re <em>already</em> loading from multiple <code>k</code> positions at a time, you may want to think about what benefits that design might be providing, and how you should set your kernel’s numerical parameters so that you minimize latency overheads while also making effective use of the SM’s limited shared memory capacity.</p>
+<h3>Suggestion: Overlapping Data Movement and Computation</h3>
+<p>Memory requests and floating-point operations make use of separate physical resources, and are able to execute simultaneously. To make the most effective use of the hardware, it is desirable to <strong>overlap</strong> memory requests with computation as much as possible.</p>
+<p>The compiler will generally do a good job of scheduling instructions to overlap L1-to-register loads with computation wherever possible, by leveraging ILP. However, overlapping global-to-shared-memory data movement with computation can be trickier, because writing to shared memory typically involves explicit synchronization with <code>__syncthreads()</code>. If you’re not careful, writing code using the straightforward design pattern of “load to shared memory, synchronize, compute” will erase all opportunities for overlapping.</p>
+<p>There are three main strategies you might consider pursuing to overlap loads from global memory with computation in your matrix multiply kernel.</p>
+<p>The first is to use <strong>different warps</strong> to carry out <strong>different tasks</strong>. You could program your kernel so that some warps in each block are responsible solely for loading data from global memory to L1, while other warps in the block are responsible solely for performing computations on data already in L1. Because warps run concurrently with respect to each other, performing data movement and computation on different warps will result in those operations being overlapped. This technique is sometimes known as “<strong>warp specialization</strong>”:</p>
+<p><img src="images/overlapping_warp_specialized.svg" alt="" /></p>
+<p>If you do adopt such a warp-specialized design, you will likely need to <a href="https://en.wikipedia.org/wiki/Multiple_buffering"><strong>double-buffer</strong></a> the storage for your A and B tiles, to avoid overwriting data while you’re still computing on it.</p>
+<p>The second strategy is to rely on the fact that under certain circumstances, <strong>multiple blocks</strong> can be scheduled on a single SM <strong>simultaneously</strong>. If you have two blocks running on each SM, there is a good chance that as the SM settles into its steady-state behavior, each block’s computation will run opportunistically while the other block’s warps are stalled waiting on loads from global memory.</p>
+<p><img src="images/overlapping_co_resident.svg" alt="" /></p>
+<p>Achieving overlapping by running multiple blocks on each SM may be easier to program than writing an explicitly warp-specialized kernel, but it gives you less direct control; in particular, it can be hard to guarantee that multiple blocks of your kernel invocation will fit on a single SM. If you choose to go this route, it may be helpful to keep in mind that in order for two blocks to be scheduled on the same SM, each block must use <strong>less than half of the SM’s shared memory and register capacity</strong>. To hint to the compiler that you want it to allocate registers in a way which leaves room for at least two blocks per SM, you can pass a value of <code>2</code> as the second argument to <a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#launch-bounds"><code>__launch_bounds___(...)</code></a>. You can check how many blocks of your kernel invocation can run on a single SM using the CUDA API function <a href="https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__OCCUPANCY.html#group__CUDART__OCCUPANCY_1ge99bee88c427b3f8ffa8ec3e43fd877d"><code>cudaOccupancyMaxActiveBlocksPerMultiprocessor</code></a>.</p>
+<p>The final strategy you might adopt for overlapping data movement and computation is to use the relatively new “<a href="https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=async#data-movement-and-conversion-instructions-cp-async"><strong>async copy</strong></a>” instructions introduced in NVIDIA’s <a href="https://en.wikipedia.org/wiki/Ampere_(microarchitecture)">Ampere</a> generation of GPUs (we are using an Ampere-generation GPU). Async copy instructions are like ordinary load instructions, with two key differences:</p>
+<ol>
+<li>
+<p>Async copies can transfer data <strong>directly from global memory to shared memory</strong>, without going through registers.</p>
+</li>
+<li>
+<p>As the name suggests, async copies <strong>execute asynchronously</strong>. To be sure that the data transfer initiated by an async copy instruction has completed, you need to execute an explicit “wait” instructions which blocks on completion of the copy.</p>
+</li>
+</ol>
+<p>Unlike the prior two overlapping strategies discussed in this section, by using async copies you can overlap data movement and computation without <em>any</em> warps ever being stalled on memory requests. Because register space is a precious resource, and because every warp consumes register space whether it’s currently executing or not, reducing the number of warps required to implement overlapping can potentially deliver significant improvements in efficiency.</p>
+<p><img src="images/overlapping_async.svg" alt="" /></p>
+<p>Similarly to the warp-specialized overlapping design, when using async copies to implement overlapping you will likely need some kind of <a href="https://en.wikipedia.org/wiki/Multiple_buffering"><strong>double buffering</strong></a>.</p>
+<p>In the starter code, we’ve provided two functions which you can use to access the hardware’s async copy functionality<sup class="footnote-reference"><a href="#async_copy">1</a></sup>:</p>
+<ol>
+<li>
+<p><code>cp_async4</code>, which initiates an asynchronous copy of <strong>4 words</strong> (<strong>16 bytes</strong>) per CUDA thread from an address in global memory to an address in shared memory. The source and target addresses must each be <strong>16-byte aligned</strong>.</p>
+</li>
+<li>
+<p><code>async_memcpy_waitall</code>, which blocks on completion of all prior async copy operations initiated by the <strong>current CUDA thread</strong>. Note that this does <strong>not</strong> guarantee completion of any copies initiated by other CUDA threads; to synchronize across CUDA threads, you still need to separately call <code>__syncthreads();</code>.</p>
+</li>
+</ol>
+<h3>Suggestion: Vectorized Loads</h3>
+<p>So far in this course, we’ve always loaded data from memory to registers in denominations of <strong>1 word (4 bytes) per CUDA thread</strong>. However, the hardware also supports loading <strong>2 words (8 bytes)</strong> or <strong>4 words (16 bytes)</strong> per CUDA thread in a single instruction. This applies both when accessing global memory and when accessing shared memory.</p>
+<p>These wide load instructions are known as “vectorized loads,” and using them can both improve <strong>global memory bandwidth utilization</strong> and reduce <strong>instruction issue overhead</strong> (<a href="https://developer.nvidia.com/blog/cuda-pro-tip-increase-performance-with-vectorized-memory-access/">Source</a>). Reducing instruction issue overhead for loads from shared memory is especially important in the <strong>inner loop</strong> of a matrix multiply kernel, where <strong>every cycle</strong> not spent issuing FMA instructions is a cycle wasted.</p>
+<p>You can access vectorized load instructions by using the special built-in <a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/#built-in-vector-types"><code>float2</code></a> and <a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/#built-in-vector-types"><code>float4</code></a> types, which represent a vector of 2 floats and a vector of 4 floats, respectively. To perform a vectorized load, just cast the source pointer to a pointer to the appropriate vector type:</p>
+<pre><span class="highlight-source highlight-c++"><span class="highlight-storage highlight-type highlight-c">float</span> <span class="highlight-keyword highlight-operator highlight-c++">*</span>buf <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> ... <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+<span class="highlight-support highlight-type highlight-stdint highlight-c">int32_t</span> idx <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> ... <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+float4 data <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-keyword highlight-operator highlight-c">*</span><span class="highlight-keyword highlight-operator highlight-word highlight-cast highlight-c++">reinterpret_cast</span><span class="highlight-punctuation highlight-section highlight-generic highlight-begin highlight-c++">&lt;</span>float4<span class="highlight-keyword highlight-operator highlight-c">*</span><span class="highlight-punctuation highlight-section highlight-generic highlight-end highlight-c++">&gt;</span><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span>buf <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">+</span> idx<span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span> <span class="highlight-comment highlight-line highlight-double-slash highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">//</span> note: must be aligned!
+</span></span></pre>
+<p>When performing a vectorized load, the address you load from must be aligned to the width of the vector type. You can access the individual word-sized values inside the vector types using the fields <code>.x</code>, <code>.y</code>, <code>.z</code>, <code>.w</code> (in that order).</p>
+<p>When using vectorized loads to access shared memory, you may wonder about the interaction between vectorized loads and bank conflicts. After all, strided access patterns like the following will typically cause bank conflicts:</p>
+<pre><span class="highlight-source highlight-c++"><span class="highlight-storage highlight-type highlight-c">float</span> <span class="highlight-keyword highlight-operator highlight-c++">*</span>buf_in_shmem <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> ... <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+<span class="highlight-comment highlight-line highlight-double-slash highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">//</span> 2-way bank conflict on every even-numbered bank:
+</span><span class="highlight-storage highlight-type highlight-c">float</span> x <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> buf_in_shmem<span class="highlight-meta highlight-brackets highlight-c++"><span class="highlight-punctuation highlight-section highlight-brackets highlight-begin highlight-c++">[</span><span class="highlight-constant highlight-numeric highlight-c++">2</span> <span class="highlight-keyword highlight-operator highlight-c">*</span> threadIdx<span class="highlight-punctuation highlight-accessor highlight-dot highlight-c++">.</span><span class="highlight-variable highlight-other highlight-readwrite highlight-member highlight-c++">x</span><span class="highlight-punctuation highlight-section highlight-brackets highlight-end highlight-c++">]</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+<span class="highlight-comment highlight-line highlight-double-slash highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">//</span> 2-way bank conflict on every odd-numbered bank:
+</span><span class="highlight-storage highlight-type highlight-c">float</span> y <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> buf_in_shmem<span class="highlight-meta highlight-brackets highlight-c++"><span class="highlight-punctuation highlight-section highlight-brackets highlight-begin highlight-c++">[</span><span class="highlight-constant highlight-numeric highlight-c++">2</span> <span class="highlight-keyword highlight-operator highlight-c">*</span> threadIdx<span class="highlight-punctuation highlight-accessor highlight-dot highlight-c++">.</span><span class="highlight-variable highlight-other highlight-readwrite highlight-member highlight-c++">x</span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">+</span> <span class="highlight-constant highlight-numeric highlight-c++">1</span><span class="highlight-punctuation highlight-section highlight-brackets highlight-end highlight-c++">]</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+</span></pre>
+<p>You may ask: is loading a <code>float2</code> from shared memory fundamentally doing the same thing as the code above, and therefore incurring a 2-way bank conflict? Do we get a bank conflict when we run code like the following?</p>
+<pre><span class="highlight-source highlight-c++"><span class="highlight-storage highlight-type highlight-c">float</span> <span class="highlight-keyword highlight-operator highlight-c++">*</span>buf_in_shmem <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> ... <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+<span class="highlight-comment highlight-line highlight-double-slash highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">//</span> bank conflict? (Spoiler: no!)
+</span>float2 xy <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-keyword highlight-operator highlight-c">*</span><span class="highlight-keyword highlight-operator highlight-word highlight-cast highlight-c++">reinterpret_cast</span><span class="highlight-punctuation highlight-section highlight-generic highlight-begin highlight-c++">&lt;</span>float2<span class="highlight-keyword highlight-operator highlight-c">*</span><span class="highlight-punctuation highlight-section highlight-generic highlight-end highlight-c++">&gt;</span><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span>buf_in_shmem <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">+</span> <span class="highlight-constant highlight-numeric highlight-c++">2</span> <span class="highlight-keyword highlight-operator highlight-c">*</span> threadIdx<span class="highlight-punctuation highlight-accessor highlight-dot highlight-c++">.</span><span class="highlight-variable highlight-other highlight-readwrite highlight-member highlight-c++">x</span><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+</span></pre>
+<p>The short answer is: <strong>no</strong>, vectorized loads do not incur bank conflicts in cases like the above, where all the lanes in a warp access contiguous addresses. Rather, the L1 SRAM can first spend one cycle servicing the first 16 lanes’ requests, and then spend a subsequent cycle servicing the next 16 lanes’ requests.<sup class="footnote-reference"><a href="#shmem_vector">2</a></sup> On each cycle, we use every bank of the L1 SRAM exactly once, so we can make use of the L1’s full bandwidth with no conflicts.</p>
+<p><img src="images/vectorized_shmem.svg" alt="" /></p>
+<p>Finally, note that, thanks to <strong>compiler optimizations</strong>, your code may <strong>already</strong> implicitly contain vectorized loads. To see if the compiler is inserting vectorized loads into your program, look for instructions like <a href="https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-ld"><code>ld.shared.v2</code> and <code>ld.shared.v4</code></a> in the generated PTX.</p>
+<h3>Suggestion: Block Scheduling for L2 Reuse</h3>
+<p>When your kernel invocation has many more blocks than SMs, not all blocks will run at the same time. Instead, the blocks launched by your kernel invocation will go into a <strong>queue</strong>, and will only begin executing when resources become available. Although CUDA provides no formal guarantees about the order in which blocks will be scheduled, in practice blocks are scheduled in ascending order of <strong>linear block index</strong> (with <code>blockIdx.x</code> being the fastest-moving dimension).</p>
+<p>By thinking about the order in which blocks are scheduled on the GPU, you may be able to find ways to <strong>improve L2-level data reuse</strong> by designing your matrix multiplication kernel such that it is likely that blocks running at the same time will access the same data in L2 as often as possible. To do so, you would need to change how each block in your kernel computes its logical <code>i</code>, <code>j</code>, <code>k</code> indices based on its <code>blockIdx</code>.</p>
+<h3>Questions</h3>
+<p>Once you’ve implemented your <code>matmul_improved</code> kernel and achieved a run time under 7 ms on the <code>3072 * 3072 * 3072</code> problem size, you can answer the following question:</p>
+<blockquote>
+<p><strong>Question 1 for final write-up:</strong> What was the best run time you were you able to achieve on the <code>3072 * 3072 * 3072</code> problem size? What percentage of peak FLOP/s utilization does that correspond to? What techniques did you try to use to optimize your kernel, and which of those did you find actually deliver a speedup in practice? Where did the biggest wins come from? Did you encounter any interesting bugs along the way? Are there any remaining puzzles about your kernel’s performance that you haven’t yet resolved?</p>
+</blockquote>
+<h2>Part 2: Handling More Problem Sizes</h2>
+<p>So far, we’ve focused on optimizing the performance of our kernel for just a <strong>single</strong> problem size: <code>3072 * 3072 * 3072</code>. In real applications, matrix multiplications can consist of a <strong>wide range</strong> of different problem sizes, some of which have <strong>fundamentally different</strong> performance characteristics than the problem size we’ve been studying until now.</p>
+<p>In this section, we’ll be extending our kernel to be able to handle a greater variety of problem sizes efficiently. Designing matrix multiplication algorithms to be robust to truly arbitrary problem sizes is an entire art unto itself, and we’ll be investigating it in more detail in Lab 6. For now, we’ll be focusing on just this restricted set of problem sizes:</p>
+<div class="table-container"><table><thead><tr><th><code>size_i</code></th><th><code>size_j</code></th><th><code>size_k</code></th></tr></thead><tbody>
+<tr><td><code>3072</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code> 512</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code> 256</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code> 128</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code>  64</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code>  32</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code>  16</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code>   1</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code> 256</code></td><td><code> 256</code></td><td><code> 256</code></td></tr>
+<tr><td><code> 256</code></td><td><code> 256</code></td><td><code>1024</code></td></tr>
+<tr><td><code> 256</code></td><td><code> 256</code></td><td><code>8192</code></td></tr>
+<tr><td><code> 128</code></td><td><code> 128</code></td><td><code>32768</code></td></tr>
+</tbody></table>
+</div>
+<p>(You can also find this table in machine-readable JSON format in the file <code>sizes.json</code> included with the starter code.)</p>
+<h3>Analysis</h3>
+<p>Before we start trying to optimize our code for these problem sizes, it may be helpful to have the answers to a few questions in mind:</p>
+<blockquote>
+<p><strong>Question 2 for final write-up:</strong> For <strong>each of the problem sizes</strong> in this lab, walk through the following analysis (you’re welcome to use a script to automate the calculations!):</p>
+<ol>
+<li>
+<p>How many <strong>total FLOPs</strong> does the problem size require us to perform?</p>
+</li>
+<li>
+<p>Considering (1), what is the fastest we could process this problem size if FLOPs were the only constraint?</p>
+</li>
+<li>
+<p>How many <strong>unique bytes of data</strong> does this problem size require us to load from / store to DRAM?</p>
+</li>
+<li>
+<p>Considering (3), what is the fastest we could process this problem size if data movement were the only constraint?</p>
+</li>
+<li>
+<p>Considering (2) and (4) together, what <strong>lower bound</strong> does this imply for the actual run time of our algorithm? Is the workload compute-bound or bandwidth-bound?</p>
+</li>
+<li>
+<p>Considering (5), what is the maximum TFLOP/s we could achieve on this problem size? (This is just (1) divided by (5).)</p>
+</li>
+<li>
+<p>In your <code>matmul_improved</code> implementation from Part 1, <strong>how many threadblocks</strong> will be launched for this problem size?</p>
+</li>
+<li>
+<p>How does (7) compare to the <strong>number of SMs</strong> on the machine?</p>
+</li>
+<li>
+<p>What might (8) imply about how your <code>matmul_improved</code> kernel could be expected to perform on this problem size?</p>
+</li>
+<li>
+<p>How does your <code>matmul_improved</code> kernel perform on this problem size in reality? How does that compare to (6) and to your hypothesis in (9)?</p>
+</li>
+</ol>
+</blockquote>
+<h3>Implementation</h3>
+<p>For some of the problem sizes we’re considering, it’s <strong>difficult to fill the whole machine</strong> with useful work if each threadblock is responsible for an <em>independent</em> subset of the output matrix <em>C</em>. The fundamental problem is that the <em>C</em> matrix in some problems (e.g. the <code>128 * 128</code> <em>C</em> matrix in <code>128 * 128 * 32768</code>) simply isn’t large enough to cover it with as many tiles as we have SMs.</p>
+<p>To address this, we need to somehow adjust our partitioning scheme so that we are able to launch more parallel threadblocks than we have output tiles, in order to give each SM enough work to do. Recalling our three-dimensional visualization of the <code>i, j, k</code> iteration space, one relatively simple way to create more units of parallel work is to <strong>split the iteration space along the <code>k</code> dimension</strong>:</p>
+<p><img src="images/2d_vs_3d_partitioning.png" alt="" /></p>
+<p>Perhaps unsurprisingly, this partitioning strategy for matrix multiplications is often referred to by the name “<strong>split-k</strong>.”</p>
+<p>Of course, splitting on the <code>k</code> dimension introduces a complication we didn’t previously have to deal with: now there can be multiple threadblocks computing different additive contributions to the <strong>same output tile</strong>.</p>
+<p><img src="images/3d_pillar_reduction.png" alt="" /></p>
+<p>That means that in order to implement our split-k partitioning strategy, we’re going to need to somehow perform a <strong>reduction</strong> to combine the partial sums contributed by each threadblock.</p>
+<p>There are <em>many</em> ways to perform reductions on GPUs in general, and there are even many types of reduction strategies which are used specifically in the context of matrix multiplication. Some matrix multiplication reduction strategies in contemporary use are quite complicated, and involve communication between actively-running threadblocks in a single kernel. However, it’s possible to do quite well using a relatively simple approach.</p>
+<p>The simple approach we suggest you follow in this lab is to adopt a <strong>two-kernel design</strong>:</p>
+<ol>
+<li>
+<p>The <strong>main kernel</strong> computes the <strong>partial sums</strong> contributed by each threadblock, without reducing them.</p>
+</li>
+<li>
+<p>The <strong>reduction kernel</strong> computes the <strong>final output</strong> by combining the partial sums.</p>
+</li>
+</ol>
+<p><img src="images/two_kernel_design.png" alt="" /></p>
+<p>The advantage of this two-kernel design is that it requires <strong>no intra-kernel synchronization</strong>. In both the main kernel and the reduction kernel, each CUDA thread can write its output to an <strong>independent</strong> location in global memory. The only synchronization required is that the reduction kernel must not start running until the main kernel has completed, but (as you might recall from <a href="/fall24/labs/lab3">Lab 3</a>) that is already guaranteed by default by the kernel launch mechanism.</p>
+<p>With this design, we’re ready to extend our implementation to handle more problem sizes:</p>
+<blockquote>
+<p><strong>Deliverable:</strong> In the file <code>matmul_2.cu</code>, implement the function <code>launch_matmul_improved_reduce</code>, and any associated CUDA kernels, to be able to efficiently process the full suite of problem sizes we’re considering in this lab. Specifically, for each problem size, aim to achieve <strong>at least 20% of the theoretical maximum throughput</strong> you computed for that problem size in Question 2, <strong>except</strong> for the problem sizes <code>256 * 256 * 256</code> and <code>256 * 256 * 1024</code>.</p>
+</blockquote>
+<p>(<strong>Tip:</strong> You can find a machine-readable JSON report containing all benchmark results in <code>./telerun-out/&lt;job_id&gt;/</code>.)</p>
+<p>When you write your implementation, you will probably find it necessary to have access to a <strong>temporary buffer</strong> of GPU memory in which to store the partial sums. To support this, the starter code will provide your <code>launch_matmul_improved_reduce</code> function with a <strong>pointer to a pre-allocated <code>workspace</code> buffer</strong>. The size of this workspace buffer is up to you; its size (in <strong>bytes</strong>) is determined based on the output of the function <code>get_workspace_size</code>.</p>
+<h3>Questions</h3>
+<p>Once you’ve finished your implementation, you can answer the final question of the lab:</p>
+<blockquote>
+<p><strong>Question 3 for final write-up:</strong> What fraction of theoretical peak throughput were you able to achieve for each problem size? How does the performance of your implementation for Part 2 compare to your original <code>matmul_improved</code> kernel from Part 1? What numerical parameters did you need to define for your implementation, and how did you go about setting them? What performance did you achieve on the specific problem sizes <code>256 * 256 * 256</code> and <code>256 * 256 * 1024</code>, and what, if anything, do you think might make those problem sizes different from the others? Did you encounter any interesting bugs along the way?</p>
+</blockquote>
+<h2>Deliverables</h2>
+<h3>Checkpoint (Due Monday, October 7, 11:59pm)</h3>
+<p>All we ask for the checkpoint for this lab is that you <strong>see how far you can get</strong> in optimizing your implementations for Parts 1 and 2. Just let us know how you’re doing on the assignment, and you’ll receive full credit.</p>
+<p>On the Gradescope assignment for “Lab 5 Checkpoint,” (<a href="https://www.gradescope.com/courses/849967/assignments/5109699/">link</a>) submit your answers to the prompts checking in about how you’re doing with the lab.</p>
+<h3>Final Submission (Due <em>Tuesday</em>, October 15, 11:59pm)</h3>
+<p>On the Gradescope assignment “Lab 5 Final,” (<a href="https://www.gradescope.com/courses/849967/assignments/5109701/">link</a>) submit your completed code for <code>matmul_2.cu</code>, as well as a PDF write-up containing your answers to Questions 1 - 3.</p>
+<hr />
+<div class="footnote-definition" id="async_copy"><sup class="footnote-definition-label">1</sup>
+<p>CUDA C++ includes a built-in high-level interface to access async copy functionality (<a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/#memcpy-async">Reference</a>), but it can be quite unreliable. In particular, if you pass the high-level async copy API an unsupported size in bytes, it will silently degrade to use an ordinary synchronous copy instruction. In the starter code, we’ve exposed async copies to you using inline PTX in order to take more direct control.</p>
+</div>
+<div class="footnote-definition" id="shmem_vector"><sup class="footnote-definition-label">2</sup>
+<p>Our exact description of what the hardware is doing here is an educated guess on our part; to the best of our knowledge there is no documentation on precisely how NVIDIA GPUs decompose vectorized accesses into shared memory transactions.</p>
+</div>
+</main><footer><p><a href="https://mit.edu">Massachusetts Institute of Technology</a> —
+<a href="https://www.eecs.mit.edu">Department of Electrical Engineering and Computer Science</a></p>
+</footer></body></html>
