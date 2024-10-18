@@ -34,18 +34,20 @@
 <p>For this lab, you’ll be turning in the following deliverables:</p>
 <ul>
 <li>
-<p><strong>Checkpoint:</strong> Due Monday, October 21, 11:59pm</p>
+<p><strong>Checkpoint:</strong> Due Monday, October 21, 11:59pm (<a href="https://www.gradescope.com/courses/849967/assignments/5181469/">Gradescope</a>)</p>
 </li>
 <li>
-<p><strong>Final Submission:</strong> Due Friday, October 25, 11:59pm</p>
+<p><strong>Final Submission:</strong> Due Friday, October 25, 11:59pm (<a href="https://www.gradescope.com/courses/849967/assignments/5181509/">Gradescope</a>)</p>
 </li>
 </ul>
-<h3>Under Construction!</h3>
-<p>⚠️ Note that this is a <strong>partial release</strong> of Lab 6. Parts 1 and 2 are ready, while Part 3 is still under development (although you can feel free to try to start on it if you want). Thank you for your patience!</p>
+<p>See the “Deliverables” section at the end of this document for more information on what you’ll be turning in.</p>
 <h3>Starter Code</h3>
 <p>You can get the starter code for this lab by cloning the <a href="https://github.com/accelerated-computing-class/lab6">lab repository</a>:</p>
 <pre><span class="highlight-source highlight-shell highlight-bash"><span class="highlight-meta highlight-function-call highlight-shell"><span class="highlight-variable highlight-function highlight-shell">git</span></span><span class="highlight-meta highlight-function-call highlight-arguments highlight-shell"> clone git@github.com:accelerated-computing-class/lab6.git</span>
 </span></pre>
+<blockquote>
+<p><strong>Update October 18:</strong> The starter code has been updated since its initial release, and now includes the file <a href="https://github.com/accelerated-computing-class/lab6/blob/main/matmul_3.cu"><code>matmul_3.cu</code></a> for Part 3. If you cloned the repo before this update, please pull the latest commit, or manually copy the new <code>matmul_3.cu</code> file to your computer. (<a href="https://raw.githubusercontent.com/accelerated-computing-class/lab6/refs/heads/main/matmul_3.cu">link to raw file</a>)</p>
+</blockquote>
 <h2>Introduction</h2>
 <h3>Goals for This Lab</h3>
 <p>So far in our exploration of matrix multiplication, we’ve focused primarily on optimizing <strong>data movement</strong> (<a href="/fall24/labs/lab4">Lab 4</a>) and <strong>work partitioning</strong> (<a href="/fall24/labs/lab5">Lab 5</a>). As we’ve worked to reduce bottlenecks along those dimensions, the run times of our implementations have increasingly become dominated by the cost of the <strong>floating point computations</strong> in our kernels’ innermost loops. Up until now, we’ve been implementing those core floating point computations using <a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#floating-point-instructions-fma"><strong>fused multiply-add (FMA)</strong></a> instructions. However, we can do better: modern NVIDIA GPUs support so-called <a href="https://www.nvidia.com/en-us/data-center/tensor-cores/">“<strong>tensor core</strong>”</a> instructions, which are designed specifically to accelerate matrix multiplication workloads. In this third and final matrix multiplication lab, we’ll be looking at how to use those tensor core instructions to speed up our kernels.</p>
@@ -196,7 +198,7 @@
 <li><a href="https://claude.site/artifacts/ff994c5b-a8d7-4eec-b345-82ff73b59d17"><strong>interactive ‘C’</strong></a>
 )</li>
 </ul>
-<p>(The <a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-fragment-sparse-mma-1688-tf32">PTX documentation</a> also contains its own versions of these diagrams.)</p>
+<p>(The <a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-fragment-mma-1688">PTX documentation</a> also contains its own versions of these diagrams.)</p>
 <p>Essentially:</p>
 <ul>
 <li>
@@ -220,12 +222,155 @@
 <p><strong>Question 2 for final write-up:</strong> Look at the assembly code generated for your <code>exercise_mma.cu</code> file. What does the generated SASS look like? Can you find the tensor core instruction?</p>
 </blockquote>
 <h2>Part 3: Accelerating Matrix Multiply</h2>
+<p>Now that we’ve seen how to invoke tensor core instructions on our GPU, we’re ready to integrate them into our full matrix multiply kernel!</p>
+<p>For this lab, we’ll be focusing on just a subset of the problem sizes from Lab 5. Here they are:</p>
+<div class="table-container"><table><thead><tr><th><code>size_i</code></th><th><code>size_j</code></th><th><code>size_k</code></th></tr></thead><tbody>
+<tr><td><code>3072</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code> 512</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code> 256</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code> 128</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code>  64</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code>  32</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code>  16</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+</tbody></table>
+</div>
+<h3>Analysis</h3>
+<p>To understand the maximum performance we can achieve with our tensor core implementation on each of these problem sizes, we can repeat a similar analysis to the one we carried out for the previous lab. For this analysis, you can assume that the theoretical peak TF32 tensor core throughput on our A4000 GPU is given by:</p>
+<pre><code>  (128 FLOP / tensor core / cycle)
+* (4 tensor cores / SM)
+* (48 SMs)
+* (1.56 GHz)
+
+= 38.34 TFLOP/s
+</code></pre>
 <blockquote>
-<p><strong>Coming soon!</strong> As you can probably guess, this section will soon contain some guidance on integrating tensor core instructions into your matrix multiply kernel. In the meantime, feel free to try to get a head start on implementing a version of your matrix multiply kernel using tensor cores! The problem sizes we focus on in this lab will be the same as in Lab 5.</p>
+<p><strong>Question 3 for final write-up:</strong> For <strong>each of the problem sizes</strong> in this lab, walk through the following analysis (you may find it helpful to reuse some of your calculations from <a href="/fall24/labs/lab5">Lab 5</a> Question 2):</p>
+<ol>
+<li>
+<p>Considering the total number of FLOPs required to process this problem size, what is the fastest we could process this problem size if <strong>tensor core throughput</strong> were the only constraint?</p>
+</li>
+<li>
+<p>Considering (1) as well as the minimum time required to access each unique matrix element in DRAM, what <strong>lower bound</strong> does this imply for the run time of our algorithm? Is this workload compute-bound or bandwidth-bound?</p>
+</li>
+<li>
+<p>Considering (2), what is the <strong>maximum TFLOP/s</strong> we could achieve on this problem size? (This is just (2) divided by the total FLOPs.)</p>
+</li>
+<li>
+<p>How does (3) <strong>compare</strong> to the maximum throughput achievable if we were to use <strong>FMAs</strong> rather than tensor cores (as we calculated in Lab 5 Question 2.6)? Is the workload constrained by the same resource (either compute or bandwidth) in both cases, or is one scenario compute-bound while the other is bandwidth-bound?</p>
+</li>
+</ol>
 </blockquote>
+<h3>Implementation</h3>
+<p>Our goal for the final part of this lab will be to write a matrix multiply kernel which uses <strong>tensor cores</strong> to run <strong>faster than any FMA-based matrix multiply realistically could</strong> on our largest problem sizes.</p>
+<p>To calibrate our expectations for how fast an FMA-based kernel could realistically run, we’ve measured the performance of NVIDIA’s highly-optimized <a href="https://developer.nvidia.com/cublas">cuBLAS library</a> on each problem size <strong>when running without tensor cores</strong>:<sup class="footnote-reference"><a href="#cublas_fp32">5</a></sup></p>
+<p><strong>cuBLAS Performance Without Tensor Cores:</strong></p>
+<div class="table-container"><table><thead><tr><th><code>size_i</code></th><th><code>size_j</code></th><th><code>size_k</code></th><th>Time (ms)</th><th>Throughput (TFLOP/s)</th></tr></thead><tbody>
+<tr><td><code>3072</code></td><td><code>3072</code></td><td><code>3072</code></td><td><code>4.05</code></td><td><code>14.32</code></td></tr>
+<tr><td><code>512</code></td><td><code>3072</code></td><td><code>3072</code></td><td><code>0.80</code></td><td><code>12.07</code></td></tr>
+<tr><td><code>256</code></td><td><code>3072</code></td><td><code>3072</code></td><td><code>0.46</code></td><td><code>10.40</code></td></tr>
+<tr><td><code>128</code></td><td><code>3072</code></td><td><code>3072</code></td><td><code>0.24</code></td><td><code>10.00</code></td></tr>
+<tr><td><code>64</code></td><td><code>3072</code></td><td><code>3072</code></td><td><code>0.13</code></td><td><code>9.57</code></td></tr>
+<tr><td><code>32</code></td><td><code>3072</code></td><td><code>3072</code></td><td><code>0.11</code></td><td><code>5.26</code></td></tr>
+<tr><td><code>16</code></td><td><code>3072</code></td><td><code>3072</code></td><td><code>0.11</code></td><td><code>2.73</code></td></tr>
+</tbody></table>
+</div>
+<p>Our goal will be to write an implementation which beats these non-tensor-core cuBLAS numbers on the <strong>following problem sizes:</strong></p>
+<ul>
+<li><code>3072 * 3072 * 3072</code></li>
+<li><code>512 * 3072 * 3072</code></li>
+<li><code>128 * 3072 * 3072</code></li>
+</ul>
+<p>For the other problem sizes, your implementation should be correct, but it’s okay if it achieves worse performance than cuBLAS.</p>
+<blockquote>
+<p><strong>Deliverable:</strong> In the file <a href="https://github.com/accelerated-computing-class/lab6/blob/main/matmul_3.cu"><code>matmul_3.cu</code></a>, implement the function <code>launch_matmul_tensor</code>, and any associated kernels, so that when <code>size_i</code> is <code>3072</code>, <code>512</code>, or <code>128</code>, it achieves a higher throughput than our FMA-based cuBLAS baseline. To do this, you will (almost certainly) need to use tensor cores.</p>
+</blockquote>
+<p>To hit this performance target, you don’t need any techniques other than what we’ve already discussed in Lab 4, Lab 5, and this lab. All the suggestions from the previous labs continue to apply; a few especially important ones which you may find it helpful to keep in mind are:</p>
+<ul>
+<li>
+<p><strong>Avoid register spills</strong>, by not exceeding the register file capacity and by not accessing arrays using dynamic indices.</p>
+</li>
+<li>
+<p><strong>Use microtiles for register-level reuse.</strong> This is still relevant when using tensor cores! (But how should you structure the microtiles now?)</p>
+</li>
+<li>
+<p><strong>Overlap data movement with computation</strong>, using e.g. asynchronous copy instructions.</p>
+</li>
+<li>
+<p><strong>Avoid many-way bank conflicts</strong>, either by adjusting your data layouts or by adjusting your access patterns.</p>
+</li>
+</ul>
+<p>Good luck! Once you’ve implemented your optimized kernel, you can answer the final question of the lab:</p>
+<blockquote>
+<p><strong>Question 4 for final write-up:</strong> How does the performance of your implementation compare to the cuBLAS FMA baseline for each problem size? What fraction of theoretical peak throughput (calculated in Question 3.3) were you able to achieve for each problem size? What did you need to change about your kernel design in order to make use of tensor core instructions? What RRMSE numbers do you observe for your implementation, and how do they compare to the RRMSE numbers for your non-tensor-core implementation from Lab 5? Did you encounter any interesting bugs along the way? Finally, optionally: do you have any ideas for how it might be possible to develop an implementation which runs even faster?</p>
+</blockquote>
+<p>Congratulations – you’ve reached the end of the matrix multiplication labs for 6.S894! We hope you’ve had as much fun working through them as we’ve had creating them.</p>
+<p>You’re now well on your way to being able to implement the kinds of high-performance matrix multiplication kernels which power the world’s most computationally demanding deep learning applications, as well as important applications in many other domains.</p>
+<h2>Further Reading</h2>
+<p>If you want to learn more about matrix multiplication, there are a huge number of additional topics you may find it interesting to look into, including:</p>
+<ul>
+<li>
+<p><strong>Reduced precisions:</strong></p>
+<ul>
+<li>
+<p>The tensor cores on our GPU support 16-bit floating point (<a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-fragment-mma-1688">PTX docs</a>), 8-bit integer (<a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-fragment-mma-16816-i8">PTX docs</a>), and 4-bit integer (<a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-fragment-mma-16832">PTX docs</a>) precisions. Handling these precisions efficiently poses new and interesting challenges, like needing to pack multiple values into each 32-bit word (<a href="https://docs.nvidia.com/cuda/cuda-math-api/struct____nv__bfloat162.html">CUDA docs</a>).</p>
+</li>
+<li>
+<p>Newer architectures, like Hopper, also support 8-bit floating point, and NVIDIA’s upcoming Blackwell GPUs will support exotic formats like 4-bit floating point and 6-bit (!) floating point (<a href="https://www.anandtech.com/show/21310/nvidia-blackwell-architecture-and-b200b100-accelerators-announced-going-bigger-with-smaller-data">link</a>).</p>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Fused and variant kernels:</strong></p>
+<ul>
+<li>It’s very common for high-performance machine learning applications to employ kernels which implement matrix multiplication <strong>combined with some other operation</strong>. This can look like applying an element-wise operation or a reduction on the final output of a matrix multiplication before writing it back to DRAM (<a href="https://dl.acm.org/doi/pdf/10.1145/3620666.3651369">relevant paper</a>), but it also includes even more complicated kernel designs like FlashAttention (<a href="https://arxiv.org/abs/2205.14135">link</a>, and <a href="https://arxiv.org/abs/2407.08608">state-of-the art version</a>) which embed matrix-multiply-like computations inside other kinds of workloads. An interesting recent example is FLUX (<a href="https://arxiv.org/abs/2406.06858v4">link</a>), which combines matrix multiplication with cross-GPU communication.</li>
+</ul>
+</li>
+<li>
+<p><strong>Higher-level tools:</strong></p>
+<ul>
+<li>In this lab we’ve been programming the GPU at a very low level of abstraction, but it’s also possible, and often preferable, to write matrix multiplications using higher-level CUDA libraries like CUTLASS (<a href="https://github.com/NVIDIA/cutlass">link</a>), or domain-specific languages like Triton (<a href="https://triton-lang.org/main/index.html">link</a>). Many of the performance optimizations used in the implementations of those tools are techniques that you now know how to implement by hand!</li>
+</ul>
+</li>
+<li>
+<p><strong>Improved scheduling and partitioning:</strong></p>
+<ul>
+<li>NVIDIA’s best-performing matrix multiply kernels use techniques slightly more advanced than (but very similar to!) the ideas we’ve discussed in these past three labs. Some of the key differences from the designs we’ve covered include overlapping data movement with computation using software pipelines with more than two stages (i.e. staging data into a ring buffer rather than double-buffering it) (<a href="https://github.com/NVIDIA/cutlass/blob/main/media/docs/efficient_gemm.md">link</a>), and using partitioning strategies which achieve better load-balancing than split-k, such as “stream-k” (<a href="https://arxiv.org/abs/2301.03598">link</a>).</li>
+</ul>
+</li>
+<li>
+<p><strong>Newer GPUs:</strong></p>
+<ul>
+<li>NVIDIA’s Hopper generation of GPUs includes several new features which are relevant when writing matrix multiply kernels. Notably, these include an evolved version of asynchronous copy instructions using something called the “tensor memory accelerator” (TMA) (<a href="https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/">link</a>), as well as new extremely high-throughput tensor core instructions which run asynchronously, can load their inputs directly from shared memory, and work at a granularity of four warps at a time (<a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#asynchronous-warpgroup-level-matrix-instructions-wgmma-mma">PTX docs</a>). Even though these features are different than the ones we’ve covered in this course, we hope you feel that you’re now very well-prepared to figure out how to use them (we think you are!).</li>
+</ul>
+</li>
+<li>
+<p><strong>Alternative platforms:</strong></p>
+<ul>
+<li>Because deep learning is such an active space, there’s now a veritable zoo of different hardware accelerator platforms all designed to multiply matrices. Spanning various levels of readiness, performance, and public availability, these include: <a href="https://cloud.google.com/tpu">Google’s TPUs</a>, <a href="https://www.amd.com/en/products/accelerators/instinct/mi300/mi300x.html">AMD’s GPUs</a>, <a href="https://www.apple.com/newsroom/2024/05/apple-introduces-m4-chip/">Apple’s M-series chips</a>, <a href="https://www.intel.com/content/www/us/en/products/details/processors/ai-accelerators/gaudi-overview.html?cid=sem&amp;source=sa360&amp;campid=2024_ao_cbu_us_gmocoma_gmocrbu_awa_text-link_brand_exact_cd_HQ-ai-gaudi_3500268603_google_b2b_is_non-pbm_intel&amp;ad_group=AI_Brand-Gaudi_Gaudi_Exact&amp;intel_term=intel+gaudi&amp;sa360id=43700079829610445&amp;gad_source=1&amp;gclid=CjwKCAjwjsi4BhB5EiwAFAL0YMUtHoQrSRnN4bQqFSg3SvR9uBaTz8x4oA3q6AbsQUgtmOb8VOlOkxoCc9IQAvD_BwE&amp;gclsrc=aw.ds">Intel’s Gaudi</a>, <a href="https://www.graphcore.ai/bow-processors">Graphcore’s IPUs</a>, <a href="https://aws.amazon.com/machine-learning/trainium/">Amazon’s Trainium</a>, <a href="https://tenstorrent.com/">Tenstorrent’s various accelerators</a>, <a href="https://cerebras.ai/condor-galaxy">Cerebras’s Wafer-Scale Engine</a>, <a href="https://groq.com/groq-tensor-streaming-processor-architecture-is-radically-different/">Groq’s TSPs</a>, <a href="https://en.wikipedia.org/wiki/Tesla_Dojo">the chips in Tesla’s Dojo supercomputer</a>, <a href="https://www.etched.com/">Etched’s Sohu</a>, <a href="https://sambanova.ai/technology/sn40l-rdu-ai-chip">SambaNova’s RDU</a>, <a href="https://azure.microsoft.com/en-us/blog/azure-maia-for-the-era-of-ai-from-silicon-to-software-to-systems/">Microsoft’s MAIA</a>, and <a href="https://ai.meta.com/blog/next-generation-meta-training-inference-accelerator-AI-MTIA/">Meta’s MTIA</a> – and we’re sure we forgot some! You may get a chance to program some of these in the future – and although they’re not NVIDIA GPUs, many of the fundamental ideas we’ve covered should be relevant as you learn to program <strong>any</strong> of them!</li>
+</ul>
+</li>
+</ul>
+<p>In a few weeks, we’ll start discussing ideas for final projects. If any of the matrix-multiplication-related topics above sound interesting to you, keep them in mind when you’re thinking about what you might want to work on for your final project!</p>
+<h2>Deliverables</h2>
+<h3>Checkpoint (Due Monday, October 21, 2024)</h3>
+<p>For the checkpoint for this lab, we ask that you:</p>
+<ul>
+<li>
+<p><strong>Complete Part 1</strong>, so that you’re familiar with inline PTX syntax by the time we meet together for live lab.</p>
+</li>
+<li>
+<p><strong>See how far you can get</strong> on <strong>Part 2</strong> and <strong>Part 3</strong>, and let us know anything you’re stuck on.</p>
+<ul>
+<li>We won’t require it, in case people get stuck, but <strong>if you can</strong>, please try to <strong>complete Part 2</strong> and <strong>get started on Part 3</strong> before live lab. If everyone gets started on Part 3 ahead of time, then we can spend as much time as possible during live lab discussing strategies for how to make our matrix multiply implementations run fast.</li>
+</ul>
+</li>
+</ul>
+<p>On the Gradescope assignment “Lab 6 Checkpoint,” (<a href="https://www.gradescope.com/courses/849967/assignments/5181469/">link</a>) submit your completed code for Part 1, and your answers to the prompts about how you’re doing on Part 2 and Part 3.</p>
+<h3>Final Submission (Due Friday, October 25, 2024)</h3>
+<p>On the Gradescope assignment “Lab 6 Final,” (<a href="https://www.gradescope.com/courses/849967/assignments/5181509/">link</a>), submit your completed code for <code>exercise_lop3.cu</code>, <code>exercise_mma.cu</code>, and <code>matmul_3.cu</code>, as well as a PDF write-up containing your answers to Questions 1 - 4.</p>
 <hr />
 <div class="footnote-definition" id="cutlass"><sup class="footnote-definition-label">1</sup>
-<p>NVIDIA has developed an external library called <a href="https://www.nvidia.com/en-us/data-center/tensor-cores/">“CUTLASS”</a> which provides a higher-level C++ interface for interacting with tensor cores. However, CUTLASS is built on top of many layers of complicated C++ template metaprogramming machinery, and in the course staff’s experience, accessing tensor cores directly via PTX provides better clarity about what’s actually going on. Libraries like CUTLASS can be convenient in practice, but they’re never necessary; anything you can do using CUTLASS, you can also do yourself using inline PTX.</p>
+<p>NVIDIA has developed an external library called <a href="https://github.com/NVIDIA/cutlass">“CUTLASS”</a> which provides a higher-level C++ interface for interacting with tensor cores. However, CUTLASS is built on top of many layers of complicated C++ template metaprogramming machinery, and in the course staff’s experience, accessing tensor cores directly via PTX provides better clarity about what’s actually going on. Libraries like CUTLASS can be convenient in practice, but they’re never necessary; anything you can do using CUTLASS, you can also do yourself using inline PTX.</p>
 </div>
 <div class="footnote-definition" id="lop3_opt"><sup class="footnote-definition-label">2</sup>
 <p>In practice, thanks to compiler optimizations in the PTX-to-SASS translation step, if you write CUDA code which implements three-way bit-wise operations in terms of normal two-way bit-wise operators like <code>(a &amp; b) | c</code>, the compiler will sometimes end up generating fast <code>LOP3</code> instructions for you at the SASS level anyway. However, explicitly invoking the <code>lop3</code> instruction via inline PTX provides more control.</p>
@@ -235,6 +380,9 @@
 </div>
 <div class="footnote-definition" id="illusion"><sup class="footnote-definition-label">4</sup>
 <p>Tensor core instructions aren’t the only instructions on the GPU with warp-level semantics; there are also <a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/#warp-shuffle-functions">warp-level reductions and warp-level permutations</a>, among others. <a href="https://developer.nvidia.com/blog/using-cuda-warp-level-primitives/">This blog post</a> has some interesting commentary on such warp-level functions and their history.</p>
+</div>
+<div class="footnote-definition" id="cublas_fp32"><sup class="footnote-definition-label">5</sup>
+<p>We make sure the cuBLAS kernels we’re calling won’t use tensor cores by explicitly requesting matrix multiplies in full FP32 precision as opposed to TF32 precision.</p>
 </div>
 </main><footer><p><a href="https://mit.edu">Massachusetts Institute of Technology</a> —
 <a href="https://www.eecs.mit.edu">Department of Electrical Engineering and Computer Science</a></p>
