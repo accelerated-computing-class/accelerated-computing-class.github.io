@@ -278,11 +278,12 @@
 <ul>
 <li><code>3072 * 3072 * 3072</code></li>
 <li><code>512 * 3072 * 3072</code></li>
+<li><code>256 * 3072 * 3072</code></li>
 <li><code>128 * 3072 * 3072</code></li>
 </ul>
 <p>For the other problem sizes, your implementation should be correct, but it’s okay if it achieves worse performance than cuBLAS.</p>
 <blockquote>
-<p><strong>Deliverable:</strong> In the file <a href="https://github.com/accelerated-computing-class/lab6/blob/main/matmul_3.cu"><code>matmul_3.cu</code></a>, implement the function <code>launch_matmul_tensor</code>, and any associated kernels, so that when <code>size_i</code> is <code>3072</code>, <code>512</code>, or <code>128</code>, it achieves a higher throughput than our FMA-based cuBLAS baseline. To do this, you will (almost certainly) need to use tensor cores.</p>
+<p><strong>Deliverable:</strong> In the file <a href="https://github.com/accelerated-computing-class/lab6/blob/main/matmul_3.cu"><code>matmul_3.cu</code></a>, implement the function <code>launch_matmul_tensor</code>, and any associated kernels, so that when <code>size_i</code> is <code>3072</code>, <code>512</code>, <code>256</code>, or <code>128</code>, it achieves a higher throughput than our FMA-based cuBLAS baseline. To do this, you will (almost certainly) need to use tensor cores.</p>
 </blockquote>
 <p>To hit this performance target, you don’t need any techniques other than what we’ve already discussed in Lab 4, Lab 5, and this lab. All the suggestions from the previous labs continue to apply; a few especially important ones which you may find it helpful to keep in mind are:</p>
 <ul>
