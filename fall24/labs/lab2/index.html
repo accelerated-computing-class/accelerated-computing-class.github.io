@@ -315,7 +315,7 @@
 <p><strong>Deliverable:</strong> In the file <code>mandelbrot_gpu_2.cu</code>, implement the functions <code>mandelbrot_cpu_vector_multicore_multithread_single_sm</code> and <code>launch_cpu_vector_multicore_multithread_single_sm</code> to run as many warps as you want (up to the <a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#features-and-technical-specifications-technical-specifications-per-compute-capability">hardware limit</a> of <code>32</code> warps per block), but all inside just a <strong>single block</strong>.</p>
 </blockquote>
 <blockquote>
-<p><strong>Question 6 for final write-up:</strong> In the <code>mandelbrot_cpu_vector_multicore_multithread_single_sm</code> kernel, how does run time vary as a function of the number of warps, beyond the point where there is one warp to populate each of the 4 warp schedulers on the SM? Does it keep improving all the way up to the hard limit of <code>48</code> warps per block? If so, by how much? What factors do you think might be contributing to what you observe?</p>
+<p><strong>Question 6 for final write-up:</strong> In the <code>mandelbrot_cpu_vector_multicore_multithread_single_sm</code> kernel, how does run time vary as a function of the number of warps, beyond the point where there is one warp to populate each of the 4 warp schedulers on the SM? Does it keep improving all the way up to the hard limit of <code>32</code> warps per block? If so, by how much? What factors do you think might be contributing to what you observe?</p>
 </blockquote>
 <p>Returning to a more realistic setting, analogous to the multi-threaded CPU implementation, we can finally write our full-scale multi-threaded GPU implementation:</p>
 <blockquote>
