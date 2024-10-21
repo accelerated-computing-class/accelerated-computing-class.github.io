@@ -46,6 +46,10 @@
 <p>You can get the starter code for this lab by cloning the <a href="https://github.com/accelerated-computing-class/lab3">lab repository</a>:</p>
 <pre><span class="highlight-source highlight-shell highlight-bash"><span class="highlight-meta highlight-function-call highlight-shell"><span class="highlight-variable highlight-function highlight-shell">git</span></span><span class="highlight-meta highlight-function-call highlight-arguments highlight-shell"> clone git@github.com:accelerated-computing-class/lab3.git</span>
 </span></pre>
+<h3>Errata: L1 Cache Behavior (<a href="http://localhost:8080/fall24/resources/errata/l1-cache">Link</a>)</h3>
+<p>Since publishing this lab, we’ve seen evidence that some aspects of our description of the L1 cache may be inaccurate.</p>
+<p><strong>All the performance guidance in this lab continues to apply</strong>, in the sense that, if you follow that guidance, your code will run fast in the ways we’ve described.</p>
+<p>However, it seems that NVIDIA’s L1 cache hardware may have capabilities beyond what we gave it credit for, and that some programming patterns which we warn against may in fact perform <strong>better than expected</strong>. For more information, see <a href="http://localhost:8080/fall24/resources/errata/l1-cache"><em>Errata: L1 Cache Behavior</em></a>.</p>
 <h2>Introduction</h2>
 <h3>Goals for This Lab</h3>
 <p>In labs 1 and 2, we implemented parallel algorithms for visualizing the Mandelbrot fractal. One of the things we noticed about our Mandelbrot workload was that it was <strong>compute-dominated</strong> – almost all the run time of the program was spent executing arithmetic instructions on variables in registers, with a negligible amount of time spent writing results to memory.</p>

@@ -1,0 +1,132 @@
+<!DOCTYPE html><html lang="en-us"><head><meta charset="utf-8"><title>6.S894</title><base href="/fall24/resources/errata/l1-cache/"><meta content="width=device-width, initial-scale=1" name="viewport"><style>@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall24/assets/font/tex-gyre-heros/texgyreheros-regular.otf") format("opentype");
+    font-weight: regular;
+    font-style: regular;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall24/assets/font/tex-gyre-heros/texgyreheros-bold.otf") format("opentype");
+    font-weight: bold;
+    font-style: regular;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall24/assets/font/tex-gyre-heros/texgyreheros-italic.otf") format("opentype");
+    font-weight: regular;
+    font-style: italic;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall24/assets/font/tex-gyre-heros/texgyreheros-bolditalic.otf") format("opentype");
+    font-weight: bold;
+    font-style: italic;
+}</style><link href="/fall24/assets/main.css" rel="stylesheet"><link crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css" integrity="sha384-wcIxkf4k558AjM3Yz3BBFQUbk/zgIYC2R0QpeeYb+TwlBVMrlgLqwRjRtGZiK7ww" rel="stylesheet"><link href="/fall24/assets/favicon.png" rel="icon" type="image/png"></head><body><header><nav><h1><a href="/fall24/">6.S894</a></h1>
+<p><a href="/fall24/calendar">Calendar</a></p>
+<p><a href="/fall24/labs">Labs</a></p>
+<p><a href="/fall24/syllabus">Syllabus</a></p>
+<p><a href="/fall24/resources">Resources</a></p>
+<p><a href="/fall24/contact">Contact</a></p>
+<p><a href="/fall24/piazza">Piazza</a></p>
+</nav></header><main><h1>Errata: L1 Cache Behavior</h1>
+<h2>Caching Mutable Data in L1</h2>
+<p>In our original instructions for <a href="/fall24/labs/lab3">Lab 3</a> and <a href="/fall24/labs/lab4">Lab 4</a>, we wrote that, because the L1 cache is incoherent, typical load instructions will <strong>bypass</strong> the L1 cache, and only loads accessing <strong>read-only</strong> data are eligible to be cached:</p>
+<p>From Lab 3:</p>
+<blockquote>
+<p><em>…while the shared L2 behaves like a normal cache – implicitly caching all normal loads and stores from DRAM – the per-SM L1 cache is <strong>not coherent</strong> across SMs. As a result, most normal loads and stores <strong>bypass</strong> the L1.</em></p>
+</blockquote>
+<p>From Lab 4:</p>
+<blockquote>
+<p><em>Because the L1 caches on the GPU are <a href="https://en.wikipedia.org/wiki/Cache_coherence"><strong>incoherent</strong></a>, the compiler will typically emit load instructions which <strong>bypass</strong> the L1 cache by default, and will only emit instructions that use the L1 cache under two circumstances:</em></p>
+<ol>
+<li>
+<p><em>If the <strong>compiler can figure out</strong> that the memory location you’re reading won’t change from one access to the next. This is somewhat rare and unreliable, but it can happen!</em></p>
+</li>
+<li>
+<p><em>If you <strong>manually tell the compiler</strong> that the memory location you’re reading won’t change from one access to the next. You can do this by using the special <a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#read-only-data-cache-load-function"><code>__ldg(...)</code></a> function.</em></p>
+</li>
+</ol>
+</blockquote>
+<p>Although NVIDIA’s documentation and public communications are somewhat opaque on this matter, we now have strong evidence that the behavior we described in Lab 3 and Lab 4 is <strong>not</strong> the full story:</p>
+<ul>
+<li>
+<p>At least on recent NVIDIA GPUs, it appears that even data which the compiler believes may change in the future can still benefit from being cached in L1.</p>
+</li>
+<li>
+<p>At the PTX level, this means that even <a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-ld"><code>ld.global</code></a> instructions without the <a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#data-movement-and-conversion-instructions-ld-global-nc"><code>.nc</code> qualifier</a> (or any other caching qualifiers) can still make use of the L1 cache.</p>
+</li>
+<li>
+<p>At the SASS level, this means that <a href="https://docs.nvidia.com/cuda/cuda-binary-utilities/index.html#nvidia-ampere-gpu-and-ada-instruction-set"><code>LDG</code></a> instructions without the <code>.CONSTANT</code> qualifier can make use of the L1 cache.</p>
+</li>
+</ul>
+<h2>L1 Cache Hit Granularity</h2>
+<p>In our instructions for <a href="/fall24/labs/lab4">Lab 4</a>, we wrote that the L1 cache can only supply data from at most one contiguous 128-byte (32-word) cache line on each cycle:</p>
+<blockquote>
+<p><em>When you’re using the L1 as a read-only data cache, you can only make use of its full bandwidth if each warp accesses just a <strong>single contiguous 32-word cache line</strong> in each load instruction. (<a href="https://docs.nvidia.com/gameworks/content/developertools/desktop/analysis/report/cudaexperiments/kernellevel/memorystatisticscaches.htm">Reference</a>)</em></p>
+</blockquote>
+<p>We <strong>still recommend</strong> trying to touch only one cache line at a time per load instruction as a <strong>reasonable policy</strong> to adopt by default when designing high-performance kernels. However, we’ve now seen some evidence online suggesting that the L1 cache can in fact perform multiple tag lookups in parallel per cycle.</p>
+<h2>Further Reading</h2>
+<p>The course staff is still working to understand the performance characteristics of the L1 cache on modern NVIDIA GPUs in greater detail. If you’re interested in investigating this topic yourself, here are some references which may be relevant:</p>
+<ul>
+<li>
+<p><a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#memory-consistency-model">PTX memory consistency model</a></p>
+<ul>
+<li>
+<p>Useful background reading to understand the correctness contract which the compiler and hardware are trying to uphold. Does not directly describe the performance characteristics of the microarchitecture, but imposes constraints on its design which may help one make educated guesses at how it must be implemented.</p>
+</li>
+<li>
+<p>See also: <a href="https://dl.acm.org/doi/10.1145/3297858.3304043"><em>A Formal Analysis of the NVIDIA PTX Memory Consistency Model</em> by Lustig et al., 2019</a></p>
+</li>
+</ul>
+</li>
+<li>
+<p><a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#global-memory-5-x">CUDA global memory caching documentation</a></p>
+<ul>
+<li>
+<p>Documentation consistent with our original description of the L1 cache’s behavior in the instructions for Lab 3 and Lab 4.</p>
+</li>
+<li>
+<p>This documentation was originally published for NVIDIA’s <a href="https://en.wikipedia.org/wiki/Maxwell_(microarchitecture)">Maxwell</a> generation of GPUs (released 2014), but the CUDA documentation <a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#global-memory-8-x">claims elsewhere</a> that this description of the L1 cache is still relevant on Ampere and Hopper. It is unclear to us if the documentation is fully correct.</p>
+</li>
+</ul>
+</li>
+<li>
+<p><a href="https://forums.developer.nvidia.com/t/how-does-cuda-global-memorys-l1-caching-work/299470/2">NVIDIA developer forum post</a></p>
+<ul>
+<li>
+<p>Suggests that on Ampere, all loads, even loads of non-read-only data, are cached by default in L1:</p>
+<blockquote>
+<p><em>…caching at all levels (what ca hint means) is the default behavior, at least for cc 8.0.</em></p>
+</blockquote>
+</li>
+</ul>
+</li>
+<li>
+<p><a href="https://forums.developer.nvidia.com/t/pascal-l1-cache/49571/14">NVIDIA developer forum post</a></p>
+<ul>
+<li>
+<p>Suggests that on <a href="https://en.wikipedia.org/wiki/Volta_(microarchitecture)">Volta</a> (released 2017), data is retrieved from L2 and DRAM at the granularity of 32-byte “sectors,” and that the L1 can service up to 4 tag lookups per cycle:</p>
+<blockquote>
+<p><em>The Volta L1 data cache has 128 byte cache lines divided into 4 sectors. For local and global accesses the tag stage can compare all 32 threads at a time. The tag stage can look up 4 tags per cycle resolving a maximum of 16 sectors (4 tags x 4 sectors). On miss the cache will only fetch the unique 32 byte sectors that missed. The full cache line is not automatically fetched from L2.</em></p>
+</blockquote>
+</li>
+</ul>
+</li>
+<li>
+<p><a href="https://developer.download.nvidia.com/video/gputechconf/gtc/2019/presentation/s9839-discovering-the-turing-t4-gpu-architecture-with-microbenchmarks.pdf"><em>Dissecting the Turing GPU Architecture through Microbenchmarking</em> (Jia et al., 2019)</a></p>
+<ul>
+<li>
+<p>Fascinating presentation on experimentally observing microarchitectural details of NVIDIA’s <a href="https://en.wikipedia.org/wiki/Turing_(microarchitecture)">Turing</a> generation of GPUs (released 2018).</p>
+</li>
+<li>
+<p>Provides clear, direct evidence of the existence of 32-byte sectors in the L1 cache (see <a href="https://developer.download.nvidia.com/video/gputechconf/gtc/2019/presentation/s9839-discovering-the-turing-t4-gpu-architecture-with-microbenchmarks.pdf#page=32">slide 32</a>).</p>
+</li>
+<li>
+<p>See also: <a href="https://arxiv.org/abs/1804.06826">accompanying 66-page technical report</a> on the Volta architecture, from the same authors.</p>
+</li>
+</ul>
+</li>
+</ul>
+</main><footer><p><a href="https://mit.edu">Massachusetts Institute of Technology</a> —
+<a href="https://www.eecs.mit.edu">Department of Electrical Engineering and Computer Science</a></p>
+</footer></body></html>

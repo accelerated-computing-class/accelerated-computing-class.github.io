@@ -46,6 +46,10 @@
 <p>You can get the starter code for this lab by cloning the <a href="https://github.com/accelerated-computing-class/lab4">lab repository</a>:</p>
 <pre><span class="highlight-source highlight-shell highlight-bash"><span class="highlight-meta highlight-function-call highlight-shell"><span class="highlight-variable highlight-function highlight-shell">git</span></span><span class="highlight-meta highlight-function-call highlight-arguments highlight-shell"> clone git@github.com:accelerated-computing-class/lab4.git</span>
 </span></pre>
+<h3>Errata: L1 Cache Behavior (<a href="http://localhost:8080/fall24/resources/errata/l1-cache">Link</a>)</h3>
+<p>Since publishing this lab, we’ve seen evidence that some aspects of our description of the L1 cache may be inaccurate.</p>
+<p><strong>All the performance guidance in this lab continues to apply</strong>, in the sense that, if you follow that guidance, your code will run fast in the ways we’ve described.</p>
+<p>However, it seems that NVIDIA’s L1 cache hardware may have capabilities beyond what we gave it credit for, and that some programming patterns which we warn against may in fact perform <strong>better than expected</strong>. For more information, see <a href="http://localhost:8080/fall24/resources/errata/l1-cache"><em>Errata: L1 Cache Behavior</em></a>.</p>
 <h3>Viewing Assembly</h3>
 <p>Modern compilers are complicated beasts, and the best way to understand what they’re doing is often to manually inspect the instructions they emit. Starting with this lab, and going forward, we encourage you to start making a habit of <strong>looking at the generated assembly code</strong> for your kernels as part of your performance engineering workflow.</p>
 <p>To view the assembly code for your GPU kernels, you can use <a href="https://godbolt.org/z/Pbf494Tzd">Compiler Explorer</a> (also known as “Godbolt,” after its creator <a href="https://xania.org/MattGodbolt">Matt Godbolt</a>). Compiler Explorer is an excellent free online tool which lets you view the assembly code for programs written in any of a huge variety of different languages, compiled with any of a huge selection of different compilers.</p>
