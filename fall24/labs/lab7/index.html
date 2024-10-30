@@ -229,7 +229,7 @@ __global__ <span class="highlight-storage highlight-type highlight-c">void</span
 <h3>Implementation</h3>
 <p>This run-length compression workload is more irregular than anything else we’ve looked at so far in this course, because the <strong>dependency relationships</strong> between memory locations in the input and output buffers aren’t predictable ahead of time. To know <strong>where in the output arrays</strong> you should write information about a given run, you need to know <strong>how many runs</strong> came before it. Nevertheless, it <em>is</em> possible to parallelize this algorithm on the GPU!</p>
 <blockquote>
-<p><strong>Deliverable:</strong> In the file <code>rle_compress.cu</code>, fill in the function <code>launch_rle_compress</code>, and any associated kernels, to implement run-length compression on the GPU. Aim to process the main benchmark in <code>1.5 ms</code> or less.</p>
+<p><strong>Deliverable:</strong> In the file <code>rle_compress.cu</code>, fill in the function <code>launch_rle_compress</code>, and any associated kernels, to implement run-length compression on the GPU. Aim to process the main benchmark in <strong><code>1.5 ms</code> or less</strong>.</p>
 </blockquote>
 <p>You can find the raw file we’ll be trying to compress here: <a href="images/rle_raw.bmp">link</a>. (You may notice it looks familiar!) The file is approximately 16 million bytes long, and contains some regions with many tightly-packed short runs, as well as other regions with just a few long runs.</p>
 <h4>Suggestion: Using Scan</h4>
@@ -256,7 +256,7 @@ __global__ <span class="highlight-storage highlight-type highlight-c">void</span
 <h2>Part 3: Decompression (Extra Credit)</h2>
 <p>If you have time, we encourage you to also try implementing <strong>run-length decompression</strong> on the GPU. This is the exact inverse of the run-length compression from Part 2, with the <code>compressed_data</code> and <code>compressed_length</code> arrays represented in the same format.</p>
 <blockquote>
-<p><strong>Deliverable (optional, extra credit):</strong> In the file <code>rle_decompress.cu</code>, write the function <code>launch_rle_decompress</code>, and any associated kernels, to implement run-length decompression. Aim to achieve a run time of less than <code>1 ms</code> on both of the benchmarks in the starter code.</p>
+<p><strong>Deliverable (optional, extra credit):</strong> In the file <code>rle_decompress.cu</code>, write the function <code>launch_rle_decompress</code>, and any associated kernels, to implement run-length decompression. Aim to achieve a run time of <strong>less than <code>1 ms</code></strong> on both of the benchmarks in the starter code.</p>
 </blockquote>
 <p>The starter code will benchmark your decompression implementation using two data sources, each of which is roughly 16 million bytes when uncompressed:</p>
 <ol>
@@ -283,9 +283,9 @@ __global__ <span class="highlight-storage highlight-type highlight-c">void</span
 </span></pre>
 <p>You can only call <code>workspace_alloc_1.alloc</code> and <code>workspace_alloc_2.alloc</code> once each per execution of <code>launch_rle_decompress</code>, because each object can only manage a single contiguous memory allocation.</p>
 <h3>Questions</h3>
-<p>Once you’ve implemented your decompression implementation, you can answer the final question of the lab:</p>
+<p>Once you’ve completed your decompression implementation, you can answer the final question of the lab:</p>
 <blockquote>
-<p><strong>Question 3 for final write-up (optional, extra credit):</strong> What run time were you able to achieve on each benchmark with your run-length decompression implementation? What was your design process like, and what design did you end up adopting? Did you notice any differences in what you needed to do to achieve a good run time on each benchmark? Did you encounter any interesting bugs along the way? Do you have any ideas for how you could make your implementation faster?</p>
+<p><strong>Question 3 for final write-up (optional, extra credit):</strong> What run time were you able to achieve on each benchmark with your run-length decompression implementation? What was your design process like, and what design did you end up adopting? Did you notice any differences between the two benchmarks in terms of what you needed to do to achieve a good run time? Did you encounter any interesting bugs along the way? Do you have any ideas for how you could make your implementation faster?</p>
 </blockquote>
 <h2>Deliverables</h2>
 <h3>Checkpoint (Due Monday, October 28, 2024)</h3>
