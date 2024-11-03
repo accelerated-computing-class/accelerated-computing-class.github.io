@@ -1,0 +1,172 @@
+<!DOCTYPE html><html lang="en-us"><head><meta charset="utf-8"><title>6.S894</title><base href="/fall24/labs/lab8/"><meta content="width=device-width, initial-scale=1" name="viewport"><style>@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall24/assets/font/tex-gyre-heros/texgyreheros-regular.otf") format("opentype");
+    font-weight: regular;
+    font-style: regular;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall24/assets/font/tex-gyre-heros/texgyreheros-bold.otf") format("opentype");
+    font-weight: bold;
+    font-style: regular;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall24/assets/font/tex-gyre-heros/texgyreheros-italic.otf") format("opentype");
+    font-weight: regular;
+    font-style: italic;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall24/assets/font/tex-gyre-heros/texgyreheros-bolditalic.otf") format("opentype");
+    font-weight: bold;
+    font-style: italic;
+}</style><link href="/fall24/assets/main.css" rel="stylesheet"><link crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css" integrity="sha384-wcIxkf4k558AjM3Yz3BBFQUbk/zgIYC2R0QpeeYb+TwlBVMrlgLqwRjRtGZiK7ww" rel="stylesheet"><link href="/fall24/assets/favicon.png" rel="icon" type="image/png"></head><body><header><nav><h1><a href="/fall24/">6.S894</a></h1>
+<p><a href="/fall24/calendar">Calendar</a></p>
+<p><a href="/fall24/labs">Labs</a></p>
+<p><a href="/fall24/syllabus">Syllabus</a></p>
+<p><a href="/fall24/resources">Resources</a></p>
+<p><a href="/fall24/contact">Contact</a></p>
+<p><a href="/fall24/piazza">Piazza</a></p>
+</nav></header><main><h1>Lab 8: One Million Circles</h1>
+<h2>Prologue: Logistics</h2>
+<h3>Due Dates</h3>
+<p>For this lab, you’ll be turning in the following deliverables:</p>
+<ul>
+<li>
+<p><strong>Checkpoint:</strong> Due Monday, November 4, 11:59pm (<a href="https://www.gradescope.com/courses/849967/assignments/5261910">Gradescope</a>)</p>
+</li>
+<li>
+<p><strong>Final Submission:</strong> Due Sunday, November 10, 11:59pm (<a href="https://www.gradescope.com/courses/849967/assignments/5261911">Gradescope</a>)</p>
+</li>
+</ul>
+<p>See the “Deliverables” section at the end of this document for more information on what you’ll be turning in.</p>
+<h3>Starter Code</h3>
+<p>You can get the starter code for this lab by cloning the <a href="https://github.com/accelerated-computing-class/lab8">lab repository</a>:</p>
+<pre><span class="highlight-source highlight-shell highlight-bash"><span class="highlight-meta highlight-function-call highlight-shell"><span class="highlight-variable highlight-function highlight-shell">git</span></span><span class="highlight-meta highlight-function-call highlight-arguments highlight-shell"> clone git@github.com:accelerated-computing-class/lab8.git</span>
+</span></pre>
+<h2>Introduction</h2>
+<p>Congratulations – you’ve made it! You’ve reached the <a href="https://tvtropes.org/pmwiki/pmwiki.php/Main/FinalBoss">final lab</a> of 6.S894.</p>
+<p>In this lab, we’ll finally be using the GPU for its originally-intended purpose: graphics! <sup class="footnote-reference"><a href="#cuda_graphics">1</a></sup> Our goal will be to implement a <strong>geometry renderer</strong> on the GPU, which…</p>
+<ol>
+<li>
+<p>…draws a <strong>collection of shapes</strong> on top of each other…</p>
+</li>
+<li>
+<p>…in a <strong>specific order</strong>…</p>
+</li>
+<li>
+<p>…with <strong>alpha transparency</strong>.</p>
+</li>
+</ol>
+<p>Concretely, the only shapes we’ll be rendering in this lab are <strong>circles</strong>. However, to render these circles, we’ll need to grapple with fundamental system design challenges which show up in a huge variety of real-world graphics workloads. For example, in a 3D game, the circles could be replaced with <a href="https://en.wikipedia.org/wiki/Texture_mapping">textured</a> <a href="https://en.wikipedia.org/wiki/Triangle_mesh">triangles</a>; in a <a href="https://en.wikipedia.org/wiki/View_synthesis">view synthesis</a> application, the circles might be replaced with <a href="https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/">Gaussian splats</a>. In any case, the fundamental principles would remain the same.</p>
+<p><img src="images/circle_analogies.svg" alt="" /></p>
+<p>This lab will continue the theme of <strong>irregularity</strong> that we previously encountered in <a href="/fall24/labs/lab7">Lab 7</a>. To make your renderer run fast, you will likely find that you need to use some of the same tricks you used in your run-length compression implementation.</p>
+<p>This lab will be especially open-ended, and is an opportunity for you to exercise your creativity. After a semester of hard work, you’re now an experienced GPU programmer, and we hope you feel you’re well-prepared to design fast parallel algorithms yourself. We believe you are!</p>
+<h2>Implementation</h2>
+<p>This lab has only a single implementation goal: to write a fast circle renderer on the GPU. Our objective will be to render a very crowded scene containing <strong>one million circles</strong>, producing an image which looks like this:</p>
+<p><img src="images/one_million_circles.png" alt="" /></p>
+<p>An input scene for our renderer consists of a list of circles, where each circle is described by seven floating-point attributes:</p>
+<ul>
+<li>
+<p>The <code>x</code> and <code>y</code> coordinates of the circle’s center, measured in pixels.</p>
+</li>
+<li>
+<p>The <code>radius</code> of the circle, measured in pixels.</p>
+</li>
+<li>
+<p>The <code>red</code>, <code>green</code>, and <code>blue</code> channels of the circle’s color, each expressed as a value between <code>0.0</code> to <code>1.0</code>.</p>
+</li>
+<li>
+<p>The <a href="https://en.wikipedia.org/wiki/Alpha_compositing"><code>alpha</code> channel</a> of the circle’s color, determining its degree of opacity/transparency.</p>
+</li>
+</ul>
+<p>When a circle is drawn on top of some background pixels (to which other circles may have already previously been drawn), each underlying pixel’s color is updated according to the following formula:</p>
+<pre><code>pixel_red   = pixel_red   * (1 - alpha) + new_red   * alpha;
+pixel_green = pixel_green * (1 - alpha) + new_green * alpha;
+pixel_blue  = pixel_blue  * (1 - alpha) + new_blue  * alpha;
+</code></pre>
+<p>where <code>new_red</code>, <code>new_green</code>, <code>new_blue</code> are the color channels of the circle being drawn, and <code>alpha</code> is the circle’s alpha channel.</p>
+<p>One consequence of using this formula for updating pixels is that <strong>the order in which circles are rendered matters</strong>. This is particularly clear in the case where <code>alpha = 1</code>, in which case the circle being drawn will completely overwrite its background. However, even when <code>alpha &lt; 1</code>, the order in which circles are drawn still matters in the general case.</p>
+<p><img src="images/circles_render_order.svg" alt="" /></p>
+<p>Circles should be drawn in order of ascending index. In the starter code, the function <code>render_cpu</code> provides an example of how to render the scene in a way which respects the intended draw order. Of course, the CPU reference implementation achieves this in the simplest way possible, by rendering each circle sequentially. Our goal will be to <strong>parallelize</strong> our circle rendering workload on the GPU, while maintaining the same output as the order-respecting CPU implementation.</p>
+<p>This brings us to the main deliverable of the lab:</p>
+<blockquote>
+<p><strong>Deliverable:</strong> In the file <code>circle.cu</code>, implement the function <code>launch_render</code>, and any associated kernels, to match the output of the CPU reference implementation. Aim to achieve a run time of <strong>under <code>40 ms</code></strong> on the million-circle benchmark.</p>
+</blockquote>
+<p>Any implementation which achieves a run time under <code>40 ms</code> will receive <strong>full credit</strong>. However, if you’re looking for a challenge, we’ll award significant <strong>extra credit</strong> to implementations which can hit a more ambitious performance target:</p>
+<blockquote>
+<p><strong>Deliverable (optional, extra credit):</strong> Implement <code>launch_render</code>, and any associated kernels, to achieve a run time of <strong>under <code>16 ms</code></strong> on the million-circle benchmark.</p>
+</blockquote>
+<p>If you can render a scene in <code>16 ms</code>, that means you could in principle render an animated version of the scene at a rate of 60 frames per second (FPS) – generally considered the standard for real-time interactive graphics.</p>
+<p>In the sections below, we give some tips on how to use the starter code, and offer some high-level guidance on how you might go about designing your implementation.</p>
+<h3>Allocating Workspace Memory</h3>
+<p>If you want to allocate workspace memory for your implementation, you can use the <code>memory_pool</code> argument which is passed to your <code>launch_render</code> function. This <code>memory_pool</code> object provides a more flexible way of allocating GPU memory than we’ve used in previous labs.</p>
+<p>You can allocate GPU memory from the <code>memory_pool</code> object using the <code>memory_pool.alloc</code> function:</p>
+<pre><span class="highlight-source highlight-c++"><span class="highlight-support highlight-type highlight-sys-types highlight-c">size_t</span> size_in_bytes <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> ... <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+<span class="highlight-storage highlight-type highlight-c">float</span> <span class="highlight-keyword highlight-operator highlight-c++">*</span>my_buffer <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-keyword highlight-operator highlight-word highlight-cast highlight-c++">reinterpret_cast</span><span class="highlight-punctuation highlight-section highlight-generic highlight-begin highlight-c++">&lt;</span><span class="highlight-storage highlight-type highlight-c">float</span> <span class="highlight-keyword highlight-operator highlight-c">*</span><span class="highlight-punctuation highlight-section highlight-generic highlight-end highlight-c++">&gt;</span><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span>memory_pool<span class="highlight-punctuation highlight-accessor highlight-dot highlight-c++">.</span><span class="highlight-meta highlight-method-call highlight-c++"><span class="highlight-variable highlight-function highlight-member highlight-c++">alloc</span><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span></span></span><span class="highlight-meta highlight-method-call highlight-c++"><span class="highlight-meta highlight-group highlight-c++">size_in_bytes</span></span><span class="highlight-meta highlight-method-call highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span></span><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+</span></pre>
+<p>You can call <code>memory_pool.alloc</code> <strong>as many times as you like</strong> in your code, and can call it <strong>at any point</strong> in the <code>launch_render</code> function.</p>
+<p>You don’t need to (and shouldn’t) call <code>cudaFree</code> on the buffers returned by <code>memory_pool.alloc</code>. The benchmark harness in the starter code will take care of freeing any allocated GPU buffers for you when it’s done benchmarking your implementation.</p>
+<p>The purpose of the <code>memory_pool</code> object is to minimize the number of <code>cudaMalloc</code> and <code>cudaFree</code> calls in the benchmarking loop. As long as, given a particular input scene, each call to your <code>launch_render</code> function always requests the same sequence of buffer sizes in the same order, the <code>memory_pool</code> object will only need to call <code>cudaMalloc</code> on the very first iteration of the benchmarking loop, and will be able to reuse the same allocated buffers on every subsequent iteration. If you’re curious how the <code>GpuMemoryPool</code> class works behind the scenes, we encourage you to look at the starter code; the implementation (which is split across multiple places in the file) is less than 100 lines in total.</p>
+<p>Note that depending on your approach, you don’t necessarily need to use any workspace memory in your solution. For certain designs, however, it might be helpful.</p>
+<h3>Suggestions</h3>
+<p>When designing your implementation, you may find it helpful to consider the following questions:</p>
+<ul>
+<li>
+<p>Where in your implementation, if anywhere, should you <strong>parallelize over pixels</strong>?</p>
+</li>
+<li>
+<p>Where in your implementation, if anywhere, should you <strong>parallelize over circles</strong>?</p>
+</li>
+<li>
+<p>How can you <strong>minimize redundant work</strong> between CUDA threads?</p>
+<ul>
+<li>
+<p>How can you minimize redundant <strong>data loading</strong>?</p>
+</li>
+<li>
+<p>How can you minimize redundant <strong>computation</strong>?</p>
+</li>
+<li>
+<p>Can you use <strong>shared memory</strong> to somehow reuse data, or the results of computations, across all CUDA threads in a block? If so, <strong>what data</strong>, and the results of <strong>what computations</strong>?</p>
+</li>
+</ul>
+</li>
+<li>
+<p>Could using a <strong>scan</strong> be helpful anywhere in your implementation?</p>
+<ul>
+<li>
+<p>If you do use a scan, what <strong>granularity</strong> should it operate at? Should it be a single big scan across some array in global memory, or should it be many local scans within individual threadblocks? Or something else?</p>
+</li>
+<li>
+<p>If you used a scan for something in your <strong>run-length compression</strong> implementation from Lab 7, can you think of any way it could serve a similar purpose here?</p>
+<ul>
+<li>In particular, can you use a scan for some kind of <strong>stream compaction</strong>?</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p>We encourage you to take some time to try coming up with multiple completely different solution strategies; it’s easy to get stuck going deep in one direction, and sometimes the best move is to take a step back and try a different approach. There are a lot of different ways you can slice this problem – the solution is <em>not</em> uniquely-determined!</p>
+<h3>Questions</h3>
+<p>Once you’ve implemented your circle renderer, you can answer this lab’s single write-up question:</p>
+<blockquote>
+<p><strong>Question for final write-up:</strong> In a paragraph or two, can you describe the design you adopted for your circle renderer? Were there any alternative designs you considered? Where did you parallelize over circles, and where did you parallelize over pixels? What run time were you able to achieve on the million-circle benchmark? Did you encounter any interesting bugs along the way? Finally, optionally: can you think of any way you might be able to make your implementation faster?</p>
+</blockquote>
+<h2>Deliverables</h2>
+<h3>Checkpoint (Due Monday, November 4, 2024)</h3>
+<p>For the checkpoint for this lab, we ask that you <strong>start thinking about possible designs</strong> for your solution. Don’t worry if you get stuck; we’ll have a chance to discuss solution strategies as a group during live lab.</p>
+<p>Optionally: If you can, we also encourage you to try starting on the code for your <strong>implementation</strong>. However, we understand you may not be able to in time for the checkpoint.</p>
+<p>On the Gradescope assignment “Lab 8 Checkpoint,” (<a href="https://www.gradescope.com/courses/849967/assignments/5261910">link</a>) submit your answers to the prompts checking in about how you’re doing with the lab.</p>
+<h3>Final Submission (Due Sunday, November 10, 2024)</h3>
+<p>On the Gradescope assignment “Lab 8 Final,” (<a href="https://www.gradescope.com/courses/849967/assignments/5261911">link</a>) submit your completed code for <code>circles.cu</code>. Additionally, submit a write-up in PDF format containing your answer to the single question in the lab.</p>
+<h2>Acknowledgments</h2>
+<p>The course staff would like to extend a big thanks to <a href="https://gfxcourses.stanford.edu/cs149/fall24">Stanford’s CS149: Parallel Computing</a> for providing the <a href="https://github.com/kykim0/asst3">inspiration</a> for this assignment, and to Kayvon Fatahalian for answering our questions about that original assignment’s design.</p>
+<hr />
+<div class="footnote-definition" id="cuda_graphics"><sup class="footnote-definition-label">1</sup>
+<p>Most real-world graphics workloads on NVIDIA GPUs aren’t actually built on top of CUDA, and instead access the GPU through separate software interfaces like <a href="https://www.vulkan.org/">Vulkan</a> which are specialized for graphics. However, the same underlying system design and performance engineering principles apply to both methods of programming the GPU, and in this lab, CUDA will be good enough for our purposes.</p>
+</div>
+</main><footer><p><a href="https://mit.edu">Massachusetts Institute of Technology</a> —
+<a href="https://www.eecs.mit.edu">Department of Electrical Engineering and Computer Science</a></p>
+</footer></body></html>
