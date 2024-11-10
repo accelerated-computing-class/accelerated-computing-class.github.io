@@ -1,0 +1,558 @@
+<!DOCTYPE html><html lang="en-us"><head><meta charset="utf-8"><title>6.S894</title><base href="/fall24/labs/final-project/"><meta content="width=device-width, initial-scale=1" name="viewport"><style>@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall24/assets/font/tex-gyre-heros/texgyreheros-regular.otf") format("opentype");
+    font-weight: regular;
+    font-style: regular;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall24/assets/font/tex-gyre-heros/texgyreheros-bold.otf") format("opentype");
+    font-weight: bold;
+    font-style: regular;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall24/assets/font/tex-gyre-heros/texgyreheros-italic.otf") format("opentype");
+    font-weight: regular;
+    font-style: italic;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall24/assets/font/tex-gyre-heros/texgyreheros-bolditalic.otf") format("opentype");
+    font-weight: bold;
+    font-style: italic;
+}</style><link href="/fall24/assets/main.css" rel="stylesheet"><link crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css" integrity="sha384-wcIxkf4k558AjM3Yz3BBFQUbk/zgIYC2R0QpeeYb+TwlBVMrlgLqwRjRtGZiK7ww" rel="stylesheet"><link href="/fall24/assets/favicon.png" rel="icon" type="image/png"></head><body><header><nav><h1><a href="/fall24/">6.S894</a></h1>
+<p><a href="/fall24/calendar">Calendar</a></p>
+<p><a href="/fall24/labs">Labs</a></p>
+<p><a href="/fall24/syllabus">Syllabus</a></p>
+<p><a href="/fall24/resources">Resources</a></p>
+<p><a href="/fall24/contact">Contact</a></p>
+<p><a href="/fall24/piazza">Piazza</a></p>
+</nav></header><main><h1>Final Project</h1>
+<h2>Due Dates</h2>
+<p>For the final project, you’ll be completing the following deliverables:</p>
+<ul>
+<li>
+<p><strong>Proposal:</strong> Due Friday, November 15, 11:59pm (<a href="https://www.gradescope.com/courses/849967/assignments/5300075/">Gradescope</a>)</p>
+</li>
+<li>
+<p><strong>Checkpoint 1:</strong> Due Friday, November 22, 11:59pm</p>
+</li>
+<li>
+<p><strong>Checkpoint 2:</strong> Due Wednesday, November 27, 11:59pm</p>
+</li>
+<li>
+<p><strong>Checkpoint 3:</strong> Due Friday, December 6, 11:59pm</p>
+</li>
+<li>
+<p><strong>Presentation:</strong> Takes place Tuesday, December 10, 2:00pm-4:00pm</p>
+</li>
+<li>
+<p><strong>Report:</strong> Due Tuesday, December 10, 11:59pm</p>
+</li>
+</ul>
+<p>The document below provides more details on what you’ll be turning in.</p>
+<h2>Overview</h2>
+<p>Now that we’ve wrapped up lab assignments for the semester, we’ve set aside these last several weeks of 6.S894 for you to work on an <strong>open-ended project</strong> on a <strong>topic of your choice</strong>. This final project is meant to give you an opportunity to exercise what you’ve learned, to learn more about topics we didn’t have a chance to cover deeply in the labs, and to get a better sense of what software engineering for GPUs and other accelerators looks like in the real world. We hope you end up having fun with it!</p>
+<p>Here’s an overview of final project logistics:</p>
+<ul>
+<li>
+<p><strong>Teams:</strong></p>
+<ul>
+<li>Students should complete final projects in teams of <strong>2-4 people</strong>.</li>
+</ul>
+</li>
+<li>
+<p><strong>Topic Selection:</strong></p>
+<ul>
+<li>
+<p>Every team gets to <strong>choose their own topic</strong> to work on.</p>
+<ul>
+<li>We provide some <strong>suggestions</strong> later in this document, but you’re allowed – and encouraged – to pursue ideas which aren’t on that list.</li>
+</ul>
+</li>
+<li>
+<p>Project topics should be <strong>challenging</strong>, but <strong>not (necessarily) novel</strong>. A final project focused on reimplementing something which already exists is totally okay.</p>
+</li>
+<li>
+<p>There will be a lightweight topic <strong>proposal</strong> and <strong>approval</strong> process, so that you get a chance to check in with the course staff before you start working on your project.</p>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Hardware and Tools:</strong></p>
+<ul>
+<li>
+<p>We’ll continue to provide access to an NVIDIA <strong>RTX A4000</strong> GPU which you can use to complete your final projects.</p>
+<ul>
+<li>You’ll have <strong>more flexible</strong> access to this GPU than you’ve previously had through Telerun. You’ll be able to submit multi-file projects, provide your own input data files, control the build process, etc.</li>
+</ul>
+</li>
+<li>
+<p>Additionally, you can use <strong>any other hardware you have access to</strong>.</p>
+<ul>
+<li>You’re welcome to use any <strong>non-NVIDIA</strong> accelerators that you have access to! For example, you could do a project involving FPGAs, or AMD GPUs, or various Apple Silicon accelerators. The key constraints are that the course staff won’t be able to provide the same level of support, and <em>everyone on your team should have access to the hardware</em> to be able to contribute.</li>
+</ul>
+</li>
+<li>
+<p>You’re welcome to explore using <strong>higher-level CUDA libraries</strong>, as well as software tools <strong>beyond CUDA</strong>. E.g. you might use <a href="https://docs.nvidia.com/cuda/cub/index.html">CUB</a>, <a href="https://github.com/NVIDIA/cutlass">CUTLASS</a>, or <a href="https://triton-lang.org/main/index.html">Triton</a>.</p>
+</li>
+</ul>
+</li>
+</ul>
+<h2>Part 1: Topic Selection</h2>
+<p>You’re welcome to propose any final project topic you like related to accelerated computing, and the course staff will work with you during the approval process to make sure the scope of your project is appropriate.</p>
+<p>Final project topics should be <strong>significantly more challenging than a lab assignment</strong>, and we’ll expect <strong>larger teams</strong> to take on somewhat <strong>more ambitious</strong> projects than smaller teams.</p>
+<h3>Example</h3>
+<p>As an example of how you might choose your final project topic, you could start with an idea like:</p>
+<blockquote>
+<p><strong>Core idea (good start; not sufficient on its own):</strong> <br> “We could implement the forward pass of <a href="https://arxiv.org/abs/2205.14135">FlashAttention</a>.”</p>
+</blockquote>
+<p>You could then come up with possible <strong>extensions</strong> to this core idea which would make it more interesting:</p>
+<blockquote>
+<p><strong>Possible extensions:</strong></p>
+<ol>
+<li>
+<p>“We could implement both the forward and backward passes of FlashAttention.”</p>
+</li>
+<li>
+<p>“We could aim to achieve 90% of the performance of the best FlashAttention implementation we can find online.”</p>
+</li>
+<li>
+<p>“We could aim to efficiently support irregular and dynamic <a href="https://huggingface.co/docs/transformers/glossary#attention-mask">attention masks</a>.”</p>
+</li>
+<li>
+<p>“We could implement a version of FlashAttention using a technique like <a href="https://arxiv.org/abs/2309.06180">PagedAttention</a> to more efficiently handle batches with irregular sequence lengths.”</p>
+</li>
+<li>
+<p>“We could add support for low-precision (e.g. 4-bit-quantized) inputs with special techniques to preserve accuracy, as in <a href="https://arxiv.org/abs/2401.18079">this paper</a>.”</p>
+</li>
+<li>
+<p>“We could integrate our FlashAttention implementation with <a href="https://pytorch.org/">PyTorch</a> and measure how it affects the end-to-end performance of a transformer implementation.”</p>
+</li>
+<li>
+<p>“We could explore opportunities for fusing our FlashAttention implementation with other nearby operations in a transformer layer, such as a <a href="https://arxiv.org/abs/2104.09864">rotary position embedding (RoPE)</a> operator.”</p>
+</li>
+</ol>
+</blockquote>
+<p>The appropriate scope for your project depends on the size of your team:</p>
+<ul>
+<li>
+<p>For a team of <strong>2 people</strong>, choosing <strong>2-3</strong> extensions from the above list would correspond to the right level of difficulty.</p>
+</li>
+<li>
+<p>For a team of <strong>3-4 people</strong>, choosing <strong>3-4</strong> extensions from the above list would correspond to the right level of difficulty.</p>
+</li>
+</ul>
+<p>(Note: If the above FlashAttention ideas sound interesting, you’re welcome to <strong>actually pursue this</strong> for your final project if you want!)</p>
+<h3>Proposals</h3>
+<p>Final project proposals should be submitted on Gradescope (<a href="https://www.gradescope.com/courses/849967/assignments/5300075/">link</a>) in PDF format, and should contain the following parts:</p>
+<ol>
+<li>
+<p>A list of <strong>team members</strong>.</p>
+</li>
+<li>
+<p>A brief <strong>description</strong> of your idea, in <strong>1-2 paragraphs</strong>.</p>
+</li>
+<li>
+<p>An explanation of the <strong>resources</strong> you plan to use for your project.</p>
+</li>
+</ol>
+<h4>Example</h4>
+<p>The following shows an example of a complete, successful final project proposal:</p>
+<blockquote>
+<p><strong>Final Project Proposal (Example)</strong></p>
+<p><strong>Team Members:</strong> Alice, Bob, Carol</p>
+<p><strong>Description:</strong> We plan to implement a FlashAttention forward and backward pass at <code>bfloat16</code> precision, targeting RTX A4000 GPUs. We will aim for both our forward and backward passes to achieve 90% of the throughput of the best FlashAttention implementation we can find online, evaluated at reasonable problem sizes. We will integrate our FlashAttention implementation with PyTorch and measure its affect on the end-to-end latency of a single training step for a transformer model.</p>
+<p><strong>Resources:</strong> We will develop and benchmark our kernels using the RTX A4000 GPU provided by the course. Additionally, Carol has access to an NVIDIA A6000 GPU through her lab, which we may use to run <a href="https://developer.nvidia.com/nsight-compute">NSight Compute</a> when debugging the performance of our kernels.</p>
+</blockquote>
+<h3>Approval Process</h3>
+<p>After you submit your final project proposal, the course staff will try to get back to you within 1-2 days to either…</p>
+<ol>
+<li>
+<p>Immediately <strong>approve</strong> your proposed topic, or…</p>
+</li>
+<li>
+<p>Work with you to <strong>refine the scope</strong> of your proposed topic.</p>
+</li>
+</ol>
+<p>If the course staff doesn’t immediately approve your proposal, we may try to schedule a meeting with members of your team to discuss ways your proposal could be extended or pared down. After the course staff has worked with you to develop a revised proposal, you can consider your proposal approved and can start working on your project.</p>
+<p>All correctly-formatted project proposals submitted before the November 15 deadline will receive <strong>full credit</strong> for the proposal component of the final project, regardless of whether or not they are immediately approved.</p>
+<h3>Topic Suggestions</h3>
+<p>Although we encourage you to come up with your own ideas for final projects, we also have a list of topic areas you might find it helpful to consider when writing your proposals.</p>
+<p>The topics we suggest can be roughly broken down into two categories:</p>
+<ol>
+<li>
+<p><strong>Performance engineering</strong> projects, where the goal is to develop an implementation of some workload which runs as fast as possible.</p>
+</li>
+<li>
+<p><strong>Investigation / reverse-engineering</strong> projects, where the goal is to deeply understand the performance characteristics and microarchitectural details of the hardware. Because these details are often undocumented, doing this will likely require running a lot of carefully-controlled experiments to try to determine how the hardware works empirically.</p>
+</li>
+</ol>
+<p>This “performance engineering” / “investigation” distinction isn’t perfectly sharp, and it’s fine to do a project which straddles both categories.</p>
+<p>With those categories in mind, here are some of the topic areas you may want to consider. These don’t necessarily all constitute complete project ideas; you may need to combine several ideas from this list, or elaborate on an idea with your own extensions, to arrive at a complete project proposal:</p>
+<ul>
+<li>
+<p><strong>Performance engineering:</strong></p>
+<ul>
+<li>
+<p><strong>Matrix-multiply-like workloads:</strong></p>
+<ul>
+<li>
+<p>(See also: “Further Reading” in <a href="/fall24/labs/lab6">Lab 6</a>.)</p>
+</li>
+<li>
+<p>Achieve 90% of cuBLAS performance across a range of matrix multiply problem sizes.</p>
+</li>
+<li>
+<p>Implement reduced-precision matrix multiply kernels.</p>
+</li>
+<li>
+<p>Explore using higher-level libraries like CUTLASS (<a href="https://github.com/NVIDIA/cutlass">link</a>) or ThunderKittens (<a href="https://github.com/HazyResearch/ThunderKittens">link</a>).</p>
+</li>
+<li>
+<p>Explore using Triton (<a href="https://triton-lang.org/main/index.html">link</a>).</p>
+<ul>
+<li>
+<p>Explore the implementation details of how Triton generates code for matrix-multiply-like workloads.</p>
+</li>
+<li>
+<p>Explore modifying / extending the Triton compiler. (Ambitious!)</p>
+</li>
+</ul>
+</li>
+<li>
+<p>Explore advanced matrix multiply scheduling strategies like many-stage software pipelines (<a href="https://github.com/NVIDIA/cutlass/blob/main/media/docs/efficient_gemm.md">link</a>) or “stream-k” partitioning (<a href="https://arxiv.org/abs/2301.03598">link</a>)</p>
+</li>
+<li>
+<p>Implement FlashAttention.</p>
+</li>
+<li>
+<p>Implement sparse linear algebra workloads.</p>
+<ul>
+<li>
+<p>Explore using the structured sparsity features of tensor cores. (<a href="https://developer.nvidia.com/blog/accelerating-inference-with-sparsity-using-ampere-and-tensorrt/">link</a>)</p>
+</li>
+<li>
+<p>Implement sparse-sparse or sparse-dense matrix-matrix or matrix-vector multiplication.</p>
+<ul>
+<li>Compare to performance of cuSPARSE. (<a href="https://docs.nvidia.com/cuda/cusparse/">link</a>)</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Graphics and simulation workloads:</strong></p>
+<ul>
+<li>
+<p>Explore accessing the GPU via graphics APIs, e.g. Vulkan (<a href="https://www.vulkan.org/">link</a>), rather than CUDA.</p>
+</li>
+<li>
+<p>Implement a ray tracing renderer on NVIDIA RTX GPUs, using e.g. the OptiX API (<a href="https://developer.nvidia.com/rtx/ray-tracing/optix">link</a>).</p>
+</li>
+<li>
+<p>Develop fast pure-CUDA implementations of ray tracing, triangle mesh rendering, etc.</p>
+</li>
+<li>
+<p>Explore differentiable rendering: NeRF (<a href="https://www.matthewtancik.com/nerf">link</a>), Gaussian splatting (<a href="https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/">link</a>), etc.</p>
+</li>
+<li>
+<p>Explore mesh processing on the GPU, as in the work of our guest lecturer Ahmed Mahmoud (<a href="https://www.research.autodesk.com/publications/rxmesh-gpu-mesh-data-structure/">link</a>).</p>
+</li>
+<li>
+<p>Implement a fluid or soft-body simulation using the material point method (<a href="https://en.wikipedia.org/wiki/Material_point_method">link</a>).</p>
+</li>
+<li>
+<p>Implement a fluid dynamics simulation by e.g. numerically solving the Navier-Stokes equations (<a href="https://en.wikipedia.org/wiki/Navier%E2%80%93Stokes_equations">link</a>), using lattice boltzmann methods (<a href="https://en.wikipedia.org/wiki/Lattice_Boltzmann_methods">link</a>), etc.</p>
+</li>
+<li>
+<p>Implement a finite-element-based PDE solver on a mesh (<a href="https://en.wikipedia.org/wiki/Finite_element_method">link</a>).</p>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Miscellaneous workloads:</strong></p>
+<ul>
+<li>
+<p><strong>Bioinformatics:</strong> e.g. DNA sequence alignment based on the Needleman-Wunsch algorithm (<a href="https://en.wikipedia.org/wiki/Needleman%E2%80%93Wunsch_algorithm">link</a>).</p>
+</li>
+<li>
+<p><strong>Databases:</strong> e.g. parallelizing execution of join queries on the GPU, as in <a href="https://arxiv.org/pdf/2312.00720">this paper</a>.</p>
+</li>
+<li>
+<p><strong>Signal processing:</strong> e.g. implement a fast Fourier transform (<a href="https://en.wikipedia.org/wiki/Fast_Fourier_transform">link</a>) on the GPU.</p>
+</li>
+<li>
+<p><strong>Pseudo-random number generation:</strong> explore methods of generating high-quality pseudo-random numbers on the GPU at high throughput; compare tradeoffs of different designs for different workloads.</p>
+</li>
+<li>
+<p><strong>Sorting:</strong> implement a fast sorting algorithm on the GPU. (See <a href="https://arxiv.org/abs/1709.02520">this survey</a>.)</p>
+</li>
+<li>
+<p><strong>Graph processing:</strong> e.g. pathfinding, optimal partitioning. (See <a href="https://dl.acm.org/doi/pdf/10.1145/3128571">this survey</a>.)</p>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Advanced concurrency and synchronization:</strong></p>
+<ul>
+<li>
+<p>Explore synchronization primitives available on the GPU:</p>
+<ul>
+<li>
+<p>Atomics (<a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/#atomic-functions">link</a>)</p>
+</li>
+<li>
+<p>Memory barriers</p>
+<ul>
+<li>
+<p>PTX-level (<a href="https://docs.nvidia.com/cuda/parallel-thread-execution/index.html?highlight=mbar#parallel-synchronization-and-communication-instructions-mbarrier">link</a>)</p>
+</li>
+<li>
+<p>C++-level (<a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/#asynchronous-barrier">link</a>)</p>
+</li>
+</ul>
+</li>
+<li>
+<p>Cooperative groups (<a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/#cooperative-groups">link</a>).</p>
+<ul>
+<li>Cross-threadblock and whole-grid synchronization.</li>
+</ul>
+</li>
+<li>
+<p>PTX memory consistency model (<a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#memory-consistency-model">link</a>)</p>
+</li>
+</ul>
+</li>
+<li>
+<p>Implement core concurrent data structures on the GPU:</p>
+<ul>
+<li>
+<p>Mutual exclusion locks, read-write locks</p>
+</li>
+<li>
+<p>Concurrent FIFO queues</p>
+</li>
+<li>
+<p>Concurrent hash tables</p>
+</li>
+<li>
+<p>Concurrent dynamic memory allocators</p>
+<ul>
+<li>
+<p>Using built-in GPU-side <code>malloc</code> (<a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/#dynamic-global-memory-allocation-and-operations">link</a>).</p>
+</li>
+<li>
+<p>Using your own custom concurrent allocator.</p>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Investigation / reverse engineering:</strong></p>
+<ul>
+<li>
+<p>Study <a href="https://arxiv.org/abs/1804.06826">this third-party experimental report about the Volta microarchitecture</a>, and run similar experiments to figure out how some of the corresponding details work on the <strong>newer Ampere architecture</strong>.</p>
+<ul>
+<li>
+<p>What is the banking configuration of the register file on Ampere?</p>
+</li>
+<li>
+<p>Can you observe effects related to the existence of the “register reuse cache” described in the report?</p>
+</li>
+<li>
+<p>What are the microarchitectural details of the L1 and L2 caches?</p>
+<ul>
+<li>
+<p>This includes: latency, sector size, tag lookup throughput, associativity, etc.</p>
+</li>
+<li>
+<p>Can you observe effects related to the existence of the “L1.5 cache” described in the report?</p>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p>Investigate details of <strong>threadblock scheduling:</strong></p>
+<ul>
+<li>E.g. what algorithm does the GPU use to assign blocks to SMs when different blocks take different amounts of time to complete?</li>
+</ul>
+</li>
+<li>
+<p>Investigate aspects of the <strong>memory system:</strong></p>
+<ul>
+<li>
+<p><strong>Instruction cache:</strong> Investigate the performance characteristics of the instruction cache, identify cases where it is a bottleneck for performance, and explore mitigations. (<a href="https://developer.nvidia.com/blog/improving-gpu-performance-by-reducing-instruction-cache-misses-2/">link</a>)</p>
+</li>
+<li>
+<p><strong>L1 cache:</strong></p>
+<ul>
+<li>
+<p>Investigate how the microarchitecture of the L1 cache upholds the PTX memory consistency model (<a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#memory-consistency-model">link</a>) in the presence of synchronization instructions like atomics. Are cache lines in L1 ever defensively flushed/evicted to enforce memory consistency, and if so, when? Does the GPU appear to use any kind of cache coherence protocol to keep different SMs’ L1 caches in sync?</p>
+<ul>
+<li>Note from course staff: we really hope someone will investigate this one! Please contact us if you’re interested and we’ll explain the precise problem in more detail to help you get started.</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>L1 as shared memory:</strong></p>
+<ul>
+<li>
+<p>Can multiple warps within a block overlap to get full bandwidth by coalescing their requests into shared? E.g. can you get full shared memory bandwidth at double the latency with one warp accessing odd banks and another warp accessing even banks?</p>
+</li>
+<li>
+<p>Can you experimentally confirm / refute the interaction between vectorized loads and shared memory banking which we speculatively described in the instructions for <a href="/fall24/labs/lab5">Lab 5</a>?</p>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>L2 cache:</strong></p>
+<ul>
+<li>
+<p>What’s the deal with all the different ways that CUDA allows programmers to configure the L2, regions of memory in L2, and accesses to L2? See <a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=L1%2520cache#device-memory-l2-access-management">this documentation</a>. What are the implications of these features for developing high-performance CUDA kernels?</p>
+<ul>
+<li>In particular, what’s the deal with the documentation saying that L2 caching policy is <a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=L1%2520cache#l2-policy-for-persisting-accesses">determined by RNG</a>?</li>
+</ul>
+</li>
+<li>
+<p>How do different SMs interact with each other and with L2 when accessing global memory?</p>
+<ul>
+<li>How many SMs are necessary in order to saturate DRAM/L2 at peak bandwidth? Can you do it with just one SM, with all other SMs sitting idle? If not, what is the peak bandwidth achievable with just a single SM?</li>
+</ul>
+</li>
+<li>
+<p>Do stores to DRAM always pay the full cost of loading from DRAM first, or can stores that fully overwrite a whole cache line pay only a single request’s worth of bandwidth cost?</p>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p>Investigate details of the GPU’s <strong>frequency scaling</strong> behavior.</p>
+<ul>
+<li>Under what circumstances does the GPU scale up or scale down its clock frequency? How deterministic / reproducible is this behavior across multiple trials? What implications does this have for performance benchmarking?</li>
+</ul>
+</li>
+<li>
+<p>Investigate aspects of the <strong>CUDA compiler</strong> and <strong>SASS:</strong></p>
+<ul>
+<li>
+<p>How do non-inlined function calls work at the SASS level? What ABI does CUDA use for function calls?</p>
+</li>
+<li>
+<p>Partially reverse-engineer the instruction encoding used in the SASS binary format.</p>
+<ul>
+<li>
+<p>Someone has done this for Hopper (Compute Capability 9.0): <a href="https://kuterdinel.com/nv_isa/">link</a>.</p>
+</li>
+<li>
+<p>As far as the course staff is aware, nobody has done this for our RTX A4000 GPU (Compute Capability 8.6).</p>
+</li>
+</ul>
+</li>
+<li>
+<p>Write a code generator or assembler which directly targets SASS, <em>without</em> going through PTX.</p>
+<ul>
+<li>
+<p>Even a code generator for a very specialized application could be interesting; e.g. a code generator which directly emits highly-optimized SASS corresponding to the inner loop of a matrix multiply.</p>
+</li>
+<li>
+<p>Over a decade ago, someone built a SASS assembler for the Fermi microarchitecture (<a href="https://github.com/hyqneuron/asfermi">link</a>). As far as the course staff aware, nobody has done this for any NVIDIA GPU microarchitecture since then.</p>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Hardware-constrained projects:</strong></p>
+<ul>
+<li>
+<p>(These are not possible using course-provided infrastructure alone; you’ll need to supply your own hardware.)</p>
+</li>
+<li>
+<p><strong>Using Hopper features:</strong> (If you have access to a Hopper GPU like an H100)</p>
+<ul>
+<li>
+<p>Explore using tensor cores in 8-bit floating point precision.</p>
+</li>
+<li>
+<p>Explore using the “Tensor Memory Accelerator.” (<a href="https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/">link</a>)</p>
+</li>
+<li>
+<p>Explore using “wgmma” tensor core instructions. (<a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#asynchronous-warpgroup-level-matrix-instructions-wgmma-mma">link</a>)</p>
+</li>
+<li>
+<p>Explore using “Thread Block Clusters.” (<a href="https://docs.nvidia.com/cuda/hopper-tuning-guide/index.html#thread-block-clusters">link</a>)</p>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Distributed communication between GPUs:</strong> (If you have access to a machine with multiple GPUs, ideally with NVLink. Note that <a href="https://mit-satori.github.io">MIT’s Satori cluster</a> may be a plausible resource here – it has older V100 GPUs, but there are 4 per node interconnected with NVLink and 100Gb Infiniband across nodes.)</p>
+<ul>
+<li>
+<p>Implement your own version of some or all of the “collective operations” from NVIDIA’s NCCL library (<a href="https://developer.nvidia.com/nccl">link</a>) from scratch, e.g. <a href="https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/collectives.html#allgather">AllGather</a>, <a href="https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/collectives.html#reducescatter">ReduceScatter</a>, <a href="https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/collectives.html#allreduce">AllReduce</a>.</p>
+</li>
+<li>
+<p>Compare the performance of communication over PCIe vs NVLink interconnect.</p>
+</li>
+<li>
+<p>Explore methods of overlapping cross-GPU communication with computation, including approaches based on fused kernels such as FLUX (<a href="https://arxiv.org/abs/2406.06858v4">link</a>).</p>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<h2>Part 2: Project Implementation</h2>
+<p>After your proposal is approved, you’ll have the last approximately three weeks of class available to work on final projects. During this time, the class will <strong>continue to meet in-person during live lab</strong> to give you time to work as a team and to discuss your projects with course staff.</p>
+<p>We’ll ask each student to submit three low-stakes <strong>checkpoint</strong> assignments on Gradescope to let us know how they’re doing with the final project. These checkpoints will be graded roughly the same way as lab checkpoints, and are mostly a way for the course staff to identify ways in which teams are stuck and to help them get un-stuck.</p>
+<h3>Infrastructure</h3>
+<blockquote>
+<p><strong>Under development:</strong> We will be releasing a new, more flexible version of Telerun for teams to develop their final projects. More information about this new course infrastructure is coming soon. Thanks for your patience!</p>
+</blockquote>
+<h2>Part 3: Final Presentation and Report</h2>
+<p>During live lab time on Tuesday, December 10, every team will present a brief overview of what they achieved in their final project. Due to time constraints, presentations will necessarily be short, with an anticipated time budget of roughly 5-7 minutes per presentation.</p>
+<p>Additionally, on the same day as final presentations, your team will submit a final report including:</p>
+<ol>
+<li>
+<p>All <strong>code</strong> to reproduce the experiments in your project.</p>
+</li>
+<li>
+<p>A <strong>write-up in PDF format</strong> describing:</p>
+<ul>
+<li>
+<p>The <strong>objectives</strong> you set for your final project.</p>
+<ul>
+<li>In the case of a performance engineering project, any <strong>analysis</strong> you performed, <strong>microbenchmarks</strong> you ran, or <strong>baseline implementations</strong> you used to determine the performance targets you should try to hit. Since there won’t be a staff baseline of comparison, it will now be <strong>your job</strong> to provide evidence to convince us (and yourselves!) why the performance you reached is “good.”</li>
+</ul>
+</li>
+<li>
+<p>The <strong>design</strong> of any code you wrote, including a discussion of your design process and any alternative designs you explored.</p>
+</li>
+<li>
+<p>The <strong>results</strong> of any experiments you ran.</p>
+</li>
+<li>
+<p>A <strong>discussion</strong> of your results, including any limitations of your implementation or experiments, and directions for future work.</p>
+</li>
+<li>
+<p>A <strong>related work</strong> section covering existing publicly-available software, papers, blog posts, etc. relevant to your project.</p>
+</li>
+</ul>
+</li>
+</ol>
+<p>We intend to <strong>share each final report with the whole class</strong>, so that any student who finds another team’s presentation interesting can learn about that team’s work in greater depth.</p>
+</main><footer><p><a href="https://mit.edu">Massachusetts Institute of Technology</a> —
+<a href="https://www.eecs.mit.edu">Department of Electrical Engineering and Computer Science</a></p>
+</footer></body></html>
