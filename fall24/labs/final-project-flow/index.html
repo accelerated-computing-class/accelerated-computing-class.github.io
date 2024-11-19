@@ -1,0 +1,105 @@
+<!DOCTYPE html><html lang="en-us"><head><meta charset="utf-8"><title>6.S894</title><base href="/fall24/labs/final-project-flow/"><meta content="width=device-width, initial-scale=1" name="viewport"><style>@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall24/assets/font/tex-gyre-heros/texgyreheros-regular.otf") format("opentype");
+    font-weight: regular;
+    font-style: regular;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall24/assets/font/tex-gyre-heros/texgyreheros-bold.otf") format("opentype");
+    font-weight: bold;
+    font-style: regular;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall24/assets/font/tex-gyre-heros/texgyreheros-italic.otf") format("opentype");
+    font-weight: regular;
+    font-style: italic;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall24/assets/font/tex-gyre-heros/texgyreheros-bolditalic.otf") format("opentype");
+    font-weight: bold;
+    font-style: italic;
+}</style><link href="/fall24/assets/main.css" rel="stylesheet"><link crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css" integrity="sha384-wcIxkf4k558AjM3Yz3BBFQUbk/zgIYC2R0QpeeYb+TwlBVMrlgLqwRjRtGZiK7ww" rel="stylesheet"><link href="/fall24/assets/favicon.png" rel="icon" type="image/png"></head><body><header><nav><h1><a href="/fall24/">6.S894</a></h1>
+<p><a href="/fall24/calendar">Calendar</a></p>
+<p><a href="/fall24/labs">Labs</a></p>
+<p><a href="/fall24/syllabus">Syllabus</a></p>
+<p><a href="/fall24/resources">Resources</a></p>
+<p><a href="/fall24/contact">Contact</a></p>
+<p><a href="/fall24/piazza">Piazza</a></p>
+</nav></header><main><h1>Telerun Flow for Final Projects</h1>
+<h2>Execution Flow</h2>
+<p>As stated in the Final Project instructions, we have setup a more flexible access to GPUs over Telerun. The update mainly includes the possibility to ship more complex files as an input rather just simple single-file <code>.cu</code> compilation units.</p>
+<p>In particular, the new flow allows shipping arbitrary tarballs (<code>*.tar</code>) with pre-compiled and pre-built binaries, input data, scripts, etc. for direct execution by the Telerun GPUs. The minimal tarball must contain the entry point script <code>run.sh</code> (with execution permissions) which will be invoked on the GPU server. Inside the <code>run.sh</code>, you can put all actions that should be done on the server to execute your project and get the output. For example, you can run your pre-compiled CUDA binary (which should also be placed in the same tarball), execute a python script to generate test data, export all necessary environmental variables, upload large output files to an external server, and anything else you might need.</p>
+<h3>Limitations</h3>
+<p>The current execution flow has the following limitations:</p>
+<ul>
+<li>supported GPU types: <code>NVIDIA RTX A4000</code></li>
+<li>maximum size of the acceptable tarballs: <code>64 MiB</code>
+<ul>
+<li>if your tarball is large due to, for example, large test inputs/datasets, consider shipping them separately through an external storage or generating directly on the server as a part of your execution;</li>
+</ul>
+</li>
+<li>maximum size of the outputs: <code>64 MiB</code>
+<ul>
+<li>similarly, consider shipping large outputs (but better avoid them) through an external storage;</li>
+</ul>
+</li>
+<li>execution timeout (applies to the entire execution of <code>run.sh</code>): <code>60 seconds</code></li>
+<li>default runtime environment is based on <code>Ubuntu-22.04 (amd64)</code> and includes:
+<ul>
+<li>CUDA-11.8.0 (form image <a href="https://hub.docker.com/layers/nvidia/cuda/11.8.0-base-ubuntu22.04/images/sha256-942f9a2455c62479908e6e6b7fc0eeff38a6daac2f67a0410594e0a04d688db0?context=explore">nvidia/cuda:11.8.0-base-ubuntu22.04</a>)</li>
+<li>python-3.10</li>
+<li>torch-2.1.0</li>
+</ul>
+</li>
+</ul>
+<p><strong>NOTE:</strong> If your setup (likely) requires more packages/libraries to be installed on the execution server, feel free to contact the course stuff, and we will include them in the default image.</p>
+<h2>Development Flow</h2>
+<p>The Telerun execution flow assumes the submission tarball contains the pre-built project with compiled binaries ready to be executed by the GPU server. It’s entirely up-to you how you build your project and pack the tarballs, however we strongly encourage you to follow our <em>development flow</em> explained here to make your builds simple, portable, and reproducible. The flow is based on <a href="https://medium.com/@mattiagazzola_95479/docker-developing-inside-a-container-why-how-bb0aa9cbe951">Docker Development Containers</a>.</p>
+<p><strong>Why?</strong> Because sometimes, development environments get really complex: A lot of dependencies (that constantly get updated), packages with different versions backed by different package managers, potential conflicts with other packages within your environment that often break things, so it takes hours to fix. And in the end of the day, you want to make your development environment portable and reproducible, so other people can easily build what you designed on their own machines independently on any underlying setup.</p>
+<p>To get started, we prepared a very simple version of this flow in a couple of demos available <a href="https://github.com/accelerated-computing-class/final_project_devctr">here</a>. The demos are in different branches, namely:</p>
+<ul>
+<li><code>main</code> – building and running a simple CUDA vector addition kernel;</li>
+<li><code>example_lab_5</code> – example flow to build <a href="/fall24/labs/lab5">lab5</a> matmul exercise and generate input test cases on the execution server;</li>
+<li><code>example_lab_5_cutlass</code> – <a href="/fall24/labs/lab5">lab5</a> matmul with <a href="https://github.com/NVIDIA/cutlass">CUTLASS</a>.</li>
+</ul>
+<p>There are no really limits on what you can include in the development environment and what building system you might use for your project. These simple examples are built using hang-written compile commands, but of course you can do anything (e.g. <a href="https://mesonbuild.com/">Meson</a>, <a href="https://cmake.org/">CMake</a>, <a href="https://bazel.build/">Bazel</a>, <a href="https://ninja-build.org/">Ninja</a>, etc.). The only <strong>caveat</strong> here is that Docker is still <a href="https://aws.amazon.com/compare/the-difference-between-docker-vm/">just a container</a>, and it will run on whatever system architecture your host is based on. Given that our execution servers are all <code>amd64</code>, if you develop on, say, Apple ARM silicon, you might want to consider <em>cross compilation</em>. Or (better) virtualization with emulation such as <a href="https://docs.orbstack.dev/">OrbStack</a> which can run Docker containers as easy as they are.</p>
+<h2>Details and Examples</h2>
+<p>Here, we will go through a simple example from the <a href="https://github.com/accelerated-computing-class/final_project_devctr/tree/example_lab5_cutlass">example_lab_5_cutlass</a> branch which allows you to <em>locally</em> build our <a href="/fall24/labs/lab5">lab5</a> matmul code with integrated CUTLASS and input test cases.</p>
+<h4>Step 1: Creating Your Development Environment</h4>
+<p>The entire environment is specified in <code>devctr/Dockerfile</code>. In this example, it contains <code>cuda:11.8.0-devel-ubuntu22.04</code> based image which gives us the <code>CUDA-11.8</code> sdk. We also install <code>git</code>, <code>python3</code>, and <code>CUTLASS</code>. The latter is simply done via <code>git clone</code>. If some dependencies require complex installation, it should also be provided in this <code>Dockerfile</code>.</p>
+<p>The development container has its own file system, and by default, the <code>Dockerfile</code>’s “home directory” is the <code>root</code> (<code>/</code>) of the container.</p>
+<p>After you specified your environment, you can build the development container image using our helper script <code>devtool</code>: <code>./devtool build_devctr</code>. The image will be stored locally on your host, and you can optionally push it to <a href="https://hub.docker.com/">Docker Hub</a> if you want to “commit” it or share with anyone working on the project with you.</p>
+<h4>Step 2: Building in Your Development Environment</h4>
+<p>To develop inside the container, all we need is to run the image and invoke the project building instructions. Here, it’s important to understand how Docker is accessing the host file system where the sources of the project are placed. A standard way of doing is using <a href="https://docs.docker.com/engine/storage/volumes/">Docker Volumes</a>. In a nutshell, Docker Volumes allow us to mount any host directory into some path inside the running container for read/write access.</p>
+<p>For simplicity, we have provided you with the ready-to-use configs in the same <code>devtool</code> script. It defines two folders in the same directory: <code>src</code> and <code>build</code>:</p>
+<ul>
+<li><code>src</code> is mounted by the path <code>/final_project</code> inside the development container;</li>
+<li><code>build</code> – by the path <code>/build</code>;</li>
+<li>additionally, <code>devtool</code> also makes a tarball <code>build.tar</code> out of the content of <code>build</code> which is ready to be shipped to Telerun for the execution.</li>
+</ul>
+<p>This means that anything you put into the <code>src</code> folder will be available inside the container in the <code>/final_project</code> folder, and everything your build script writes into <code>/build</code> will end-up in the host’s <code>build</code> folder and the shippable <code>build.tar</code>.</p>
+<p>Now, what the development container does is it executes the <code>src/build.sh</code> script inside its environment. You can put arbitrary complex build instructions inside this script. In the provided example, we executes <code>nvcc -O3 ...</code> command to build the <code>matmul_lab5.cu</code> CUDA file and add the CUTLASS headers into it. In your project, you can have your own build system set-up (e.g. with <a href="https://ninja-build.org/">Ninja</a>) and just call it from there (e.g. <code>cd build; ninja</code>).</p>
+<p>If you need to add some other files into your output (e.g. <code>gen_test_data.py</code> in our example which will generate test data on the GPU server), just copy them from <code>/final_project</code> into <code>/build</code>, and they will end-up in the same shippable tarball as your compiled project.</p>
+<p>To build, just execute <code>./devtool build_project</code></p>
+<h4>Step 3: Running!</h4>
+<p>As stated earlier, Telerun unpacks the content of the shipped tarball into its <em>internal workdir</em> and invokes the <code>run.sh</code> script. The <code>run.sh</code> is located in <code>src/run.sh</code> and it gets copied into the tarball during the building step.</p>
+<p>Note that <code>run.sh</code> operates <strong>on the GPU server</strong>, inside the Telerun’s <em>workdir</em> for your submission. You probably don’t need to check where exactly on the execution server the script is located, but if needed, you can always call <code>pwd</code> from <code>run.sh</code> to see it. You can also call <code>ls</code> and then submit the tarball to see the content of the Telerun workdir for your submission and check that it contains all your binaries.</p>
+<p>The tarball is submitted via Telerun with <code>python3 telerun.py submit build.tar</code>.</p>
+<p>Upon completion, Telerun with return the output in the same way as for the labs. You can inspect the lab source code in more details to see where the output should be placed, so it can be delivered back to you.</p>
+<h4>Summary</h4>
+<p>In short, this is the sequence of actions to be done to build, run, and get results for you project:</p>
+<ol>
+<li>(one time action) prepare your development environment by installing the necessary packages in <code>devctr/Dockerfile</code></li>
+<li>(one time action) build your development environment: <code>./devtool build_devctr</code></li>
+<li>(one time action) place your project inside <code>src/</code> folder</li>
+<li>(one time action) write the building instructions in <code>src/build.sh</code></li>
+<li>build it: <code>./devtool build_project</code></li>
+<li>submit it: <code>python3 telerun.py submit build.tar</code></li>
+</ol>
+<p>Only repeat <code>5.</code> and <code>6.</code> when working on your project.</p>
+</main><footer><p><a href="https://mit.edu">Massachusetts Institute of Technology</a> —
+<a href="https://www.eecs.mit.edu">Department of Electrical Engineering and Computer Science</a></p>
+</footer></body></html>
