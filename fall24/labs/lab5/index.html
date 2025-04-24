@@ -254,7 +254,7 @@ float4 data <span class="highlight-keyword highlight-operator highlight-assignme
 <h3>Final Submission (Due <em>Tuesday</em>, October 15, 11:59pm)</h3>
 <p>On the Gradescope assignment “Lab 5 Final,” (<a href="https://www.gradescope.com/courses/849967/assignments/5109701/">link</a>) submit your completed code for <code>matmul_2.cu</code>, as well as a PDF write-up containing your answers to Questions 1 - 3.</p>
 <h2>Acknowledgments</h2>
-<p>Much of the content in Lab 4 and Lab 5 in this course was adapted from Simon Boehm’s article “<a href="https://siboehm.com/articles/22/CUDA-MMM">How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance</a>,” which the course staff found to be a exceptionally useful reference when learning about this material themselves.</p>
+<p>Much of the content in Lab 4 and Lab 5 in this course was adapted from Simon Boehm’s article “<a href="https://siboehm.com/articles/22/CUDA-MMM">How to Optimize a CUDA Matmul Kernel for cuBLAS-like Performance</a>,” which the course staff found to be an exceptionally useful reference when learning about this material themselves.</p>
 <hr />
 <div class="footnote-definition" id="async_copy"><sup class="footnote-definition-label">1</sup>
 <p>CUDA C++ includes a built-in high-level interface to access async copy functionality (<a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/#memcpy-async">Reference</a>), but it can be quite unreliable. In particular, if you pass the high-level async copy API an unsupported size in bytes, it will silently degrade to use an ordinary synchronous copy instruction. In the starter code, we’ve exposed async copies to you using inline PTX in order to take more direct control.</p>
