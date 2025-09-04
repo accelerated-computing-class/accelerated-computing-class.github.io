@@ -1,0 +1,346 @@
+<!DOCTYPE html><html lang="en-us"><head><meta charset="utf-8"><title>6.S894</title><base href="/fall25/labs/lab1/"><meta content="width=device-width, initial-scale=1" name="viewport"><style>@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall25/assets/font/tex-gyre-heros/texgyreheros-regular.otf") format("opentype");
+    font-weight: regular;
+    font-style: regular;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall25/assets/font/tex-gyre-heros/texgyreheros-bold.otf") format("opentype");
+    font-weight: bold;
+    font-style: regular;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall25/assets/font/tex-gyre-heros/texgyreheros-italic.otf") format("opentype");
+    font-weight: regular;
+    font-style: italic;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall25/assets/font/tex-gyre-heros/texgyreheros-bolditalic.otf") format("opentype");
+    font-weight: bold;
+    font-style: italic;
+}</style><link href="/fall25/assets/main.css" rel="stylesheet"><link crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css" integrity="sha384-wcIxkf4k558AjM3Yz3BBFQUbk/zgIYC2R0QpeeYb+TwlBVMrlgLqwRjRtGZiK7ww" rel="stylesheet"><link href="/fall25/assets/favicon.png" rel="icon" type="image/png"></head><body><header><nav><h1><a href="/fall25/">6.S894</a></h1>
+<p><a href="/fall25/calendar">Calendar</a></p>
+<p><a href="/fall25/labs">Labs</a></p>
+<p><a href="/fall25/syllabus">Syllabus</a></p>
+<p><a href="/fall25/resources">Resources</a></p>
+<p><a href="/fall25/contact">Contact</a></p>
+<p><a href="/fall25/piazza">Piazza</a></p>
+</nav></header><main><h1>Lab 1: SIMD Mandelbrot</h1>
+<h2>Prologue: Logistics</h2>
+<h3>Lab Structure + Schedule</h3>
+<p>Welcome to 6.S894: Accelerated Computing! This is the first of a series of weekly lab assignments which you’ll be completing throughout the course. These labs are designed to give you hands-on experience designing, implementing, and analyzing high-performance programs for modern throughput-oriented computing hardware. Concretely, we’ll mostly be focusing on GPUs and CUDA (although these first two weeks will also involve writing some code for x86 CPUs).</p>
+<p>Each lab will operate according to the following structure:</p>
+<ol>
+<li>
+<p><strong>Prior Week</strong> – <strong>Release</strong> <br>
+Lab instructions and starter code are released on the course website.</p>
+</li>
+<li>
+<p><strong>Monday</strong> – <strong>Checkpoint Due</strong> <br>
+You turn in a low-stakes “lab checkpoint,” designed to get you started on the lab and to prepare for the live lab discussion on Tuesday.</p>
+</li>
+<li>
+<p><strong>Tuesday</strong> – <strong>Live Lab Session</strong> <br>
+The whole class gathers for a 2-hour in-person session to discuss the week’s lab, help answer each others’ questions, and collectively investigate different optimization strategies and performance puzzles.</p>
+</li>
+<li>
+<p><strong>Friday</strong> – <strong>Final Submission Due</strong> <br>
+You turn in your final submission for the lab, usually containing a few code files and a brief write-up formatted as a PDF.</p>
+</li>
+</ol>
+<p>For the lab checkpoint and final submission, you’ll be submitting your materials through <a href="https://www.gradescope.com/courses/1118861">Gradescope</a>. You will be added to the Gradescope <strong>after the course lottery has occurred</strong>.</p>
+
+<h3>Getting the Starter Code</h3>
+<p>You can get the starter code by cloning the lab repository:</p>
+<pre><span class="highlight-source highlight-shell highlight-bash"><span class="highlight-meta highlight-function-call highlight-shell"><span class="highlight-variable highlight-function highlight-shell">git</span></span><span class="highlight-meta highlight-function-call highlight-arguments highlight-shell"> clone git@github.com:accelerated-computing-class/lab1.git</span>
+</span></pre>
+<h3>Setting up Telerun</h3>
+<p>To run all the code we write in this course, we’ll be using <a href="https://github.com/accelerated-computing-class/telerun">Telerun</a>, a system we built to allow students to compile and run code on remote machines.</p>
+<p>Telerun is a system for running single C++/CUDA source files on remote machines and getting the output of their execution. Telerun provides a <code>submit</code> command which automatically handles:</p>
+<ul>
+<li>
+<p><strong>Uploading</strong> your source file to the remote server.</p>
+</li>
+<li>
+<p><strong>Compiling</strong> your source file with the correct options for the appropriate hardware target.</p>
+</li>
+<li>
+<p><strong>Executing</strong> your compiled program on a machine with the appropriate resources (e.g. a GPU).</p>
+</li>
+<li>
+<p><strong>Downloading</strong> the output of your program to your local computer.</p>
+</li>
+</ul>
+<p>In order to use Telerun, the only thing you need to have installed on your computer  (other than Telerun itself) is a Python interpreter.</p>
+<p>Before you start this lab, you should download and log in to Telerun using the instructions provided here:</p>
+<p>&gt;&gt;&gt; <strong><a href="https://github.com/accelerated-computing-class/telerun">Telerun Setup Instructions</a></strong> &lt;&lt;&lt;</p>
+<p>Like the rest of this course, Telerun is brand-new and experimental – it <em>will</em> have bugs! If you have any trouble setting up or using Telerun, please contact course staff on <a href="/fall25/piazza">Piazza</a>.</p>
+<p>You will be provided with a Telerun authentication token <strong>after the course lottery has occurred</strong>. We may also make small updates to the Telerun client in the coming days, so keep your eyes out for any instructions on <a href="/fall25/piazza">Piazza</a>.</p>
+<h2>Introduction</h2>
+<h3>Goals for This Lab</h3>
+<p>One of the most fundamental concepts which we’ll be repeatedly returning to throughout this course is <strong>parallelism</strong>. Methods of exploiting parallelism can take a variety of different forms at the hardware level, and can be exposed in a variety of different ways at the software level. In Lab 1 (this lab) and Lab 2 (to be released next week), we’ll be looking at:</p>
+<ol>
+<li>
+<p>The different fundamental <strong>levels</strong> of parallelism which exist in modern CPUs and GPUs: vector parallelism, instruction-level parallelism, multi-threaded parallelism, and multi-core parallelism.</p>
+</li>
+<li>
+<p>How the different types of parallelism which exist on GPUs <strong>correspond</strong> to analogous (and perhaps more familiar) types of parallelism which exist on CPUs.</p>
+</li>
+</ol>
+<p>Although GPUs and CPUs can look quite different at first, we hope that these labs will help you understand these different hardware platforms in terms of their <strong>deep similarities</strong>. As we’ll see, modern CPUs and GPUs have actually converged towards using many of the same architectural features for efficiently processing throughput-oriented workloads, although they choose to expose these features to the programmer in different ways.</p>
+<p>To explore the various types of parallelism we’re interested in, we’ll be building up a series of different approaches to computing visualizations of the <a href="https://en.wikipedia.org/wiki/Mandelbrot_set">Mandelbrot fractal</a> on CPUs and GPUs. That means you’ll be writing C++ and CUDA code to generate pictures that look like this:</p>
+<p><img src="images/mandelbrot.png" alt="" /></p>
+<p>For <strong>this week</strong> specifically (Lab 1), we’ll be looking at two ways of rendering Mandelbrot fractals:</p>
+<ol>
+<li>
+<p><strong>Sequential scalar</strong> code, with no explicit parallelism at all.</p>
+</li>
+<li>
+<p><strong>Vector-parallel</strong> code, using a “Single Instruction, Multiple Data” (SIMD) execution model.</p>
+</li>
+</ol>
+<p>We’ll look at what implementing each of these strategies looks like on both CPUs and GPUs. Along the way, we’ll be teaching you a tiny bit of CUDA (you’re not expected to have ever used CUDA before).</p>
+<p>For the <strong>lab checkpoint</strong>, the only thing we’ll ask you to turn in is a brief summary of how much progress you’ve made (especially on <a href="https://github.com/accelerated-computing-class/telerun">setting up Telerun</a>), and anything you’re stuck on. For the <strong>final submission</strong>, you’ll be turning in a scalar implementation of Mandelbrot in CUDA, and vector-parallel implementations of Mandelbrot for CPU and GPU. More information on what you’ll be turning in can be found in the “Deliverables” section at the bottom of this page.</p>
+<h2>Part 1: Scalar Mandelbrot</h2>
+<h3>CPU: Reference Implementation (Already Written)</h3>
+<p>In this lab, we’ll be studying ways to parallelize the following computation:</p>
+<pre><span class="highlight-source highlight-c++"><span class="highlight-storage highlight-type highlight-c">void</span> <span class="highlight-meta highlight-function highlight-c++"><span class="highlight-entity highlight-name highlight-function highlight-c++">mandelbrot_cpu_scalar</span></span><span class="highlight-meta highlight-function highlight-parameters highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span></span></span><span class="highlight-meta highlight-function highlight-parameters highlight-c++"><span class="highlight-meta highlight-group highlight-c++">
+    <span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> <span class="highlight-variable highlight-parameter highlight-c++">img_size</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> usually greater than 100 <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span>
+    <span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> <span class="highlight-variable highlight-parameter highlight-c++">max_iters</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> usually greater than 100 <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span>
+    <span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> <span class="highlight-keyword highlight-operator highlight-c">*</span>out <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> buffer of &#39;img_size * img_size&#39; integers <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span>
+  <span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span></span><span class="highlight-meta highlight-function highlight-c++"> </span><span class="highlight-meta highlight-function highlight-c++"><span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-begin highlight-c++">{</span></span></span><span class="highlight-meta highlight-function highlight-c++"><span class="highlight-meta highlight-block highlight-c++">
+  <span class="highlight-keyword highlight-control highlight-c++">for</span> <span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span><span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> i <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-constant highlight-numeric highlight-c++">0</span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span> i <span class="highlight-keyword highlight-operator highlight-comparison highlight-c">&lt;</span> img_size<span class="highlight-punctuation highlight-terminator highlight-c++">;</span> i<span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">+</span><span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">+</span><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span> <span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-begin highlight-c++">{</span>
+    <span class="highlight-keyword highlight-control highlight-c++">for</span> <span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span><span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> j <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-constant highlight-numeric highlight-c++">0</span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span> j <span class="highlight-keyword highlight-operator highlight-comparison highlight-c">&lt;</span> img_size<span class="highlight-punctuation highlight-terminator highlight-c++">;</span> j<span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">+</span><span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">+</span><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span> <span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-begin highlight-c++">{</span>
+        <span class="highlight-storage highlight-type highlight-c">float</span> cx <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span><span class="highlight-storage highlight-type highlight-c">float</span><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span>j<span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">/</span> <span class="highlight-storage highlight-type highlight-c">float</span><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span>img_size<span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span> <span class="highlight-keyword highlight-operator highlight-c">*</span> <span class="highlight-constant highlight-numeric highlight-c++">2.5f</span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">-</span> <span class="highlight-constant highlight-numeric highlight-c++">2.0f</span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+        <span class="highlight-storage highlight-type highlight-c">float</span> cy <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span><span class="highlight-storage highlight-type highlight-c">float</span><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span>i<span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">/</span> <span class="highlight-storage highlight-type highlight-c">float</span><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span>img_size<span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span> <span class="highlight-keyword highlight-operator highlight-c">*</span> <span class="highlight-constant highlight-numeric highlight-c++">2.5f</span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">-</span> <span class="highlight-constant highlight-numeric highlight-c++">1.25f</span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+
+        <span class="highlight-storage highlight-type highlight-c">float</span> x2 <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-constant highlight-numeric highlight-c++">0.0f</span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+        <span class="highlight-storage highlight-type highlight-c">float</span> y2 <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-constant highlight-numeric highlight-c++">0.0f</span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+        <span class="highlight-storage highlight-type highlight-c">float</span> w <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-constant highlight-numeric highlight-c++">0.0f</span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+        <span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> iters <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-constant highlight-numeric highlight-c++">0</span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+        <span class="highlight-keyword highlight-control highlight-c++">while</span> <span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span>x2 <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">+</span> y2 <span class="highlight-keyword highlight-operator highlight-comparison highlight-c">&lt;=</span> <span class="highlight-constant highlight-numeric highlight-c++">4.0f</span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">&amp;&amp;</span> iters <span class="highlight-keyword highlight-operator highlight-comparison highlight-c">&lt;</span> max_iters<span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span> <span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-begin highlight-c++">{</span>
+            <span class="highlight-storage highlight-type highlight-c">float</span> x <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> x2 <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">-</span> y2 <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">+</span> cx<span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+            <span class="highlight-storage highlight-type highlight-c">float</span> y <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> w <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">-</span> x2 <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">-</span> y2 <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">+</span> cy<span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+            x2 <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> x <span class="highlight-keyword highlight-operator highlight-c">*</span> x<span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+            y2 <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> y <span class="highlight-keyword highlight-operator highlight-c">*</span> y<span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+            w <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span>x <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">+</span> y<span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span> <span class="highlight-keyword highlight-operator highlight-c">*</span> <span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span>x <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">+</span> y<span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+            <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">+</span><span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">+</span>iters<span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+        <span class="highlight-punctuation highlight-section highlight-block highlight-end highlight-c++">}</span></span>
+        out<span class="highlight-meta highlight-brackets highlight-c++"><span class="highlight-punctuation highlight-section highlight-brackets highlight-begin highlight-c++">[</span>i <span class="highlight-keyword highlight-operator highlight-c">*</span> img_size <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">+</span> j<span class="highlight-punctuation highlight-section highlight-brackets highlight-end highlight-c++">]</span></span> <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> iters<span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+    <span class="highlight-punctuation highlight-section highlight-block highlight-end highlight-c++">}</span></span>
+  <span class="highlight-punctuation highlight-section highlight-block highlight-end highlight-c++">}</span></span>
+</span></span><span class="highlight-meta highlight-function highlight-c++"><span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-end highlight-c++">}</span></span></span>
+</span></pre>
+<p>This code populates a two-dimensional buffer of integers which can be used to visualize the <a href="https://en.wikipedia.org/wiki/Mandelbrot_set">Mandelbrot fractal</a>, if the integers are converted to colors (for this reason, we’ll call each individual element of the <code>out</code> buffer a “pixel”). You can try running this code with:</p>
+<pre><span class="highlight-source highlight-shell highlight-bash"><span class="highlight-meta highlight-function-call highlight-shell"><span class="highlight-variable highlight-function highlight-shell">python3</span></span><span class="highlight-meta highlight-function-call highlight-arguments highlight-shell"> telerun.py submit mandelbrot_cpu.cpp</span>
+</span></pre>
+<p>to measure its run time and see what kind of images it produces (look in <code>./telerun-out</code>).</p>
+<p>There are many interesting things which can be said about the mathematics of the Mandelbrot fractal and algorithms for computing it, but for the purposes of this lab, we’re not concerned with where this algorithm came from or how to intuitively interpret what it’s doing.</p>
+<p>Instead, we’re concerned with the properties of this Mandelbrot workload from a <strong>performance engineering</strong> perspective; we just want to make it run <em>fast</em>. From that perspective, some of the most important properties of this workload are:</p>
+<ol>
+<li>
+<p><strong>Every pixel is independent:</strong> <br>
+The work done at each pixel location <code>i, j</code> doesn’t depend on the work done for any other values of <code>i</code> or <code>j</code>.</p>
+</li>
+<li>
+<p><strong>There are a lot of pixels:</strong> <br>
+For typical image sizes, we’ll need to compute tens of thousands of different pixels.</p>
+</li>
+<li>
+<p><strong>Computation dominates:</strong> <br>
+Because we only need to access main memory once per pixel (to write to the <code>out</code> buffer), we can expect most of the run time to be spent doing math in the inner loop.</p>
+</li>
+<li>
+<p><strong>Different pixels need different amounts of work:</strong> <br>
+The inner <code>while</code> loop terminates after an unpredictable number of iterations, which might be different for different pixels.</p>
+</li>
+</ol>
+<p>The sample code above implements this algorithm entirely sequentially, processing one pixel at a time. However, from properties 1 and 2, we can see that there’s a lot of potential for exploiting parallelism in this workload by processing multiple pixels simultaneously. (In fact, problems like this are sometimes called “<a href="https://en.wikipedia.org/wiki/Embarrassingly_parallel">embarrassingly parallel</a>.”)</p>
+<p>In Part 2, we’ll be looking at one way to introduce parallelism into this program, using vector instructions. But first, we’ll dip a toe into GPU programming by writing a CUDA version of this <em>sequential</em> implementation.</p>
+<h3>GPU: Your Implementation</h3>
+<p>As a first exercise in CUDA, we’ll write a <em>direct translation</em> of the sequential CPU algorithm given above for generating Mandelbrot fractals. Even though this version will run on the GPU, it will use no parallelism at all.</p>
+<p>For context, we’ll first note a few basic facts about CUDA:</p>
+<ol>
+<li>
+<p><strong>CUDA is a dialect of C++</strong> that supports running code on the GPU. Most features of C++ are supported in CUDA GPU code, and use the same syntax as they do in regular C++ on your CPU. (<a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#c-language-support">Reference</a>)</p>
+</li>
+<li>
+<p><strong>CUDA is written in <code>.cu</code> files</strong>, which can contain a <em>mix</em> of code which runs on the GPU and code which runs on the CPU. The parts of the code in a <code>.cu</code> file which run on the CPU are written in ordinary C++, plus a few extensions that let it interact with the GPU. (<a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#compilation-workflow">Reference</a>)</p>
+</li>
+<li>
+<p><strong>Pointers</strong> in CUDA can point to <strong>either CPU or GPU</strong> memory. You can’t know solely based on a pointer variable’s type whether it points to CPU or GPU memory; you also need to know where the pointer came from. It is safe for CPU code to <em>hold</em> pointers to GPU memory; but if CPU code tries to <em>load</em> or <em>store</em> through a pointer to GPU memory, or vice-versa, it will crash the program. (<a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#device-memory">Reference</a>)</p>
+</li>
+<li>
+<p><strong>The <code>__global__</code> keyword</strong> marks a function as running <strong>on the GPU.</strong> Specifically, <code>__global__</code> declares a “CUDA kernel,” which is a function which runs on the GPU but which can be “launched” from the CPU. (<a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#global">Reference</a>)</p>
+</li>
+<li>
+<p><strong>CPU code can launch CUDA kernels</strong> using the special syntax <br>
+<code>kernel_name&lt;&lt;&lt;N, M&gt;&gt;&gt;(arg_1, ..., arg_n)</code> <br>
+where <code>N</code> and <code>M</code> are integers which control parallelism, <code>kernel_name</code> is a function declared with the <code>__global__</code> keyword, and <code>arg_1, ..., arg_n</code> are arguments passed to the kernel. (<a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#kernels">Reference</a>)</p>
+</li>
+</ol>
+<p>In <code>mandelbrot_gpu.cu</code>, you’ll first find two functions to be implemented:</p>
+<pre><span class="highlight-source highlight-c++">__global__ <span class="highlight-storage highlight-type highlight-c">void</span> <span class="highlight-meta highlight-function highlight-c++"><span class="highlight-entity highlight-name highlight-function highlight-c++">mandelbrot_gpu_scalar</span></span><span class="highlight-meta highlight-function highlight-parameters highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span></span></span><span class="highlight-meta highlight-function highlight-parameters highlight-c++"><span class="highlight-meta highlight-group highlight-c++">
+    <span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> <span class="highlight-variable highlight-parameter highlight-c++">img_size</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span>
+    <span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> <span class="highlight-variable highlight-parameter highlight-c++">max_iters</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span>
+    <span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> <span class="highlight-keyword highlight-operator highlight-c">*</span>out <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> pointer to GPU memory <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span>
+<span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span></span><span class="highlight-meta highlight-function highlight-c++"> </span><span class="highlight-meta highlight-function highlight-c++"><span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-begin highlight-c++">{</span></span></span><span class="highlight-meta highlight-function highlight-c++"><span class="highlight-meta highlight-block highlight-c++">
+    <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> your (GPU) code here... <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span>
+</span></span><span class="highlight-meta highlight-function highlight-c++"><span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-end highlight-c++">}</span></span></span>
+
+<span class="highlight-storage highlight-type highlight-c">void</span> <span class="highlight-meta highlight-function highlight-c++"><span class="highlight-entity highlight-name highlight-function highlight-c++">launch_mandelbrot_gpu_scalar</span></span><span class="highlight-meta highlight-function highlight-parameters highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span></span></span><span class="highlight-meta highlight-function highlight-parameters highlight-c++"><span class="highlight-meta highlight-group highlight-c++">
+    <span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> <span class="highlight-variable highlight-parameter highlight-c++">img_size</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span>
+    <span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> <span class="highlight-variable highlight-parameter highlight-c++">max_iters</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span>
+    <span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> <span class="highlight-keyword highlight-operator highlight-c">*</span>out <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> pointer to GPU memory <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span>
+<span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span></span><span class="highlight-meta highlight-function highlight-c++"> </span><span class="highlight-meta highlight-function highlight-c++"><span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-begin highlight-c++">{</span></span></span><span class="highlight-meta highlight-function highlight-c++"><span class="highlight-meta highlight-block highlight-c++">
+    <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> your (CPU) code here... <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span>
+</span></span><span class="highlight-meta highlight-function highlight-c++"><span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-end highlight-c++">}</span></span></span>
+</span></pre>
+<p>Because the function <code>mandelbrot_gpu_scalar</code> is marked <code>__global__</code>, the CUDA compiler will compile it to run on the GPU.</p>
+<p>The testing + benchmark harness provided with the lab code will not launch <code>mandelbrot_gpu_scalar</code> directly; instead, the provided lab code will call the CPU function <code>launch_mandelbrot_gpu_scalar</code>, passing it a pointer to a <em>GPU</em> memory buffer to be populated by a CUDA kernel. It is then the responsibility of the <code>launch_mandelbrot_gpu_scalar</code> function to actually launch the kernel that will fill that buffer.</p>
+<p>To implement the scalar Mandelbrot CUDA kernel, you can follow these steps:</p>
+<ol>
+<li>
+<p>Copy the code from <code>mandelbrot_cpu_scalar</code> into the body of <code>mandelbrot_gpu_scalar</code></p>
+</li>
+<li>
+<p>Add the line <br>
+<code>mandelbrot_gpu_scalar&lt;&lt;&lt;1, 1&gt;&gt;&gt;(img_size, max_iters, out);</code> <br>
+in the body of <code>launch_mandelbrot_gpu_scalar</code>. This will launch the kernel with no parallelism; it will run on the GPU as if it were a single-threaded CPU program.</p>
+</li>
+</ol>
+<p>If this seems straightforward, that’s because it is! This step in the lab is only meant to start getting you familiar with some of the basic elements of CUDA.</p>
+<p>Once you’ve filled in the scalar CUDA implementation, you can run it with:</p>
+<pre><span class="highlight-source highlight-shell highlight-bash"><span class="highlight-meta highlight-function-call highlight-shell"><span class="highlight-variable highlight-function highlight-shell">python3</span></span><span class="highlight-meta highlight-function-call highlight-arguments highlight-shell"> telerun.py submit mandelbrot_gpu.cu</span>
+</span></pre>
+<blockquote>
+<p><strong>Question 1 for final write-up</strong>: How does the run time of the scalar GPU implementation compare to the scalar CPU implementation? What factors do you think might contribute to each of their run times?</p>
+</blockquote>
+<h2>Part 2: Vector-Parallel Mandelbrot</h2>
+<p>Now it’s time to start exploiting some of the parallelism available in the Mandelbrot workload. There are many different types of parallel execution exposed in both CPUs and GPUs that we might try to apply to this problem, but for Lab 1 we’ll be focusing on <em>vector parallelism</em>, also known as “Single Instruction, Multiple Data” (SIMD) parallelism. We’ll start with a vectorized CPU implementation, and then see how the same principles of SIMD execution also show up in GPUs (albeit exposed to programmers in a very different way).</p>
+<h3>CPU: SIMD Programming Model + SIMD Execution</h3>
+<p>For our vectorized CPU implementation, we’ll be targeting x86 with <a href="https://en.wikipedia.org/wiki/AVX-512">AVX-512 extensions</a>. For 32-bit integer and float types, the vectors provided by AVX-512 are <code>512 / 32 = 16</code> elements wide. As a result, the strategy we recommend for vectorizing the Mandelbrot workload is to generate one contiguous 16-wide row of pixels at a time, as depicted in the following:</p>
+<p><canvas id="vectorGridCanvas" width="521" height="321"></canvas></p>
+<script>
+const canvas = document.getElementById('vectorGridCanvas');
+const ctx = canvas.getContext('2d');
+const cellSize = 10;
+
+// Offset by 0.5 to align with pixel boundaries
+ctx.translate(150.5, 0.5);
+
+// Set line width to 1 pixel
+ctx.lineWidth = 1;
+
+// TODO: Different colors for several vectors in a row
+for (let i = 0; i < 32; i++) {
+    for (let j = 0; j < 32; j++) {
+        if (j === 3 && i < 16) {
+            ctx.fillStyle = '#208020AA';
+            ctx.fillRect(i * cellSize, j * cellSize, cellSize, cellSize);
+        } else {
+            ctx.strokeStyle = 'lightgrey';
+        }
+        ctx.strokeRect(i * cellSize, j * cellSize, cellSize, cellSize);
+    }
+}
+</script>
+
+<p>Your task is to implement the <code>mandelbrot_cpu_vector</code> function in <code>mandelbrot_cpu.cpp</code> using explicit vector operations through the <a href="https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html">AVX-512 intrinsics</a>. You can assume that the <code>img_width</code> is always evenly divisible by 16.</p>
+<p>Things you might want to consider include:</p>
+<ul>
+<li>
+<p>Think about what needs to happen to the structure of the outer loops.</p>
+</li>
+<li>
+<p>Think about how you’re going to fill vectors with the right <code>cx</code> and <code>cy</code> values for a given row of 16 pixels.</p>
+</li>
+<li>
+<p>Think about how you’re going to handle control flow. How do you deal with the fact that different pixels have different numbers of inner loop iterations?</p>
+</li>
+</ul>
+<p>Some very useful intrinsics you might want to use for this program are:</p>
+<div class="table-container"><table><thead><tr><th>Intrinsic</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><code>_mm512_set1_ps(float a)</code></td><td>Sets all 16 words of a vector to the same fp value <em>a</em></td></tr>
+<tr><td><code>_mm512_set1_epi32(int a)</code></td><td>Sets all 16 words of a vector to the same int value <em>a</em></td></tr>
+<tr><td><code>_mm512_set_ps(e15, e14, ..., e0)</code></td><td>Set 16 words of a vector with 16 values <em>in backwards order</em></td></tr>
+<tr><td><code>_mm512_add_ps(...)</code></td><td>Add two fp vectors element-wise</td></tr>
+<tr><td><code>_mm512_sub_ps(...)</code></td><td>Subtract fp vectors element-wise</td></tr>
+<tr><td><code>_mm512_mul_ps(...)</code></td><td>Multiply fp two vectors element-wise</td></tr>
+<tr><td><code>_mm512_cmp_ps_mask(...)</code></td><td>Generate mask based on the element-wise comparison of two fp vectors</td></tr>
+<tr><td><code>_mm512_mask_add_epi32(...)</code></td><td>Add two int vectors element-wise according to the mask (<a href="https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#text=_mm512_mask_add_epi32&amp;ig_expand=6550,96">more info</a>)</td></tr>
+<tr><td><code>_mm512_storeu_si512(...)</code></td><td>Write all 16 words of a vector contiguously into memory at a given address</td></tr>
+</tbody></table>
+</div>
+<p>Don’t worry too much if you get stuck at first – we’ll have a chance during live lab to help each other figure out how to get un-stuck.</p>
+<p>You can test your <code>mandelbrot_cpu_vector</code> code by running <code>mandelbrot_cpu.cpp</code> as you did earlier:</p>
+<pre><span class="highlight-source highlight-shell highlight-bash"><span class="highlight-meta highlight-function-call highlight-shell"><span class="highlight-variable highlight-function highlight-shell">python3</span></span><span class="highlight-meta highlight-function-call highlight-arguments highlight-shell"> telerun.py submit mandelbrot_cpu.cpp</span>
+</span></pre>
+<blockquote>
+<p><strong>Question 2 for final write-up</strong>: How did you initialize <code>cx</code> and <code>cy</code>? How did you handle differences in the number of inner loop iterations between pixels in the same vector? How does the performance of your vectorized implementation compare to the scalar versions?</p>
+</blockquote>
+<h3>GPU: SPMD Programming Model + SIMD Execution</h3>
+<!--
+It was much more natural to write the scalar version that just described what happened to every pixel than to explicitly program in terms of vectors of 16 pixels at a time.
+With explicit vector programming, we are effectively running a different pixel's inner loop in each vector lane, but we have to manage all the complexities of that process ourselves.
+-->
+<p>What we just did was painful.
+The CPU scalar version of Mandelbrot was much easier to read and write than the vector version.</p>
+<p>CUDA is designed to let you write code which <em>looks</em> like the scalar version, but which <em>executes</em> on SIMD hardware like the vector version, with the performance advantage that entails.</p>
+<p>Earlier, when we wrote the GPU scalar version of Mandelbrot, we set both of the launch parameters which control the parallelism of the <code>mandelbrot_gpu_scalar</code> kernel to <code>1</code>:</p>
+<pre><span class="highlight-source highlight-c++">mandelbrot_gpu_scalar<span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">&lt;&lt;</span><span class="highlight-keyword highlight-operator highlight-comparison highlight-c">&lt;</span><span class="highlight-constant highlight-numeric highlight-c++">1</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-constant highlight-numeric highlight-c++">1</span><span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">&gt;&gt;</span><span class="highlight-keyword highlight-operator highlight-comparison highlight-c">&gt;</span><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span>img_size<span class="highlight-punctuation highlight-separator highlight-c++">,</span> max_iters<span class="highlight-punctuation highlight-separator highlight-c++">,</span> out<span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+</span></pre>
+<p>Setting those parameters to <code>1, 1</code> caused the kernel to run without any parallelism. By setting those parameters to higher values, we can unlock several different kinds of parallelism. We’ll cover all of them over the next two weeks, but for now we’ll show how to set them, and update our kernel, to exploit SIMD parallelism.</p>
+<p>We can think of these parameters as specifying the size of an iteration space over which the kernel will be instantiated. This is often called a “Single <strong>Program</strong> Multiple Data” (SPMD) programming model.</p>
+<p>NVIDIA’s GPU hardware natively executes all instructions on 32-wide vectors, and if we set the inner dimension of the iteration space to a value ≤32, all instances of our kernel will be running in different lanes of a single SIMD vector. In fact, even our GPU “scalar” version was secretly executing on just one lane of a 32-wide vector!</p>
+<p>Our final goal for this lab is to implement a vector-parallel Mandelbrot on the GPU, directly analogous to the vector-parallel version we wrote for CPU.
+To do this, we need to implement two functions:</p>
+<pre><span class="highlight-source highlight-c++">__global__ <span class="highlight-storage highlight-type highlight-c">void</span> <span class="highlight-meta highlight-function highlight-c++"><span class="highlight-entity highlight-name highlight-function highlight-c++">mandelbrot_gpu_vector</span></span><span class="highlight-meta highlight-function highlight-parameters highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span></span></span><span class="highlight-meta highlight-function highlight-parameters highlight-c++"><span class="highlight-meta highlight-group highlight-c++">
+    <span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> <span class="highlight-variable highlight-parameter highlight-c++">img_size</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span>
+    <span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> <span class="highlight-variable highlight-parameter highlight-c++">max_iters</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span>
+    <span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> <span class="highlight-keyword highlight-operator highlight-c">*</span>out <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> pointer to GPU memory <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span>
+<span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span></span><span class="highlight-meta highlight-function highlight-c++"> </span><span class="highlight-meta highlight-function highlight-c++"><span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-begin highlight-c++">{</span></span></span><span class="highlight-meta highlight-function highlight-c++"><span class="highlight-meta highlight-block highlight-c++">
+    <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> your (GPU) code here... <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span>
+</span></span><span class="highlight-meta highlight-function highlight-c++"><span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-end highlight-c++">}</span></span></span>
+
+<span class="highlight-storage highlight-type highlight-c">void</span> <span class="highlight-meta highlight-function highlight-c++"><span class="highlight-entity highlight-name highlight-function highlight-c++">launch_mandelbrot_gpu_vector</span></span><span class="highlight-meta highlight-function highlight-parameters highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span></span></span><span class="highlight-meta highlight-function highlight-parameters highlight-c++"><span class="highlight-meta highlight-group highlight-c++">
+    <span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> <span class="highlight-variable highlight-parameter highlight-c++">img_size</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span>
+    <span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> <span class="highlight-variable highlight-parameter highlight-c++">max_iters</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span>
+    <span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> <span class="highlight-keyword highlight-operator highlight-c">*</span>out <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> pointer to GPU memory <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span>
+<span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span></span><span class="highlight-meta highlight-function highlight-c++"> </span><span class="highlight-meta highlight-function highlight-c++"><span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-begin highlight-c++">{</span></span></span><span class="highlight-meta highlight-function highlight-c++"><span class="highlight-meta highlight-block highlight-c++">
+    <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> your (CPU) code here... <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span>
+</span></span><span class="highlight-meta highlight-function highlight-c++"><span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-end highlight-c++">}</span></span></span>
+</span></pre>
+<p>As before, <code>launch_mandelbrot_gpu_vector</code> should launch <code>mandelbrot_gpu_vector</code>, but this time using the dimensions <code>&lt;&lt;&lt;1, 32&gt;&gt;&gt;</code>.</p>
+<p>When we do that, the code inside <code>mandelbrot_gpu_vector</code> will run not once, but 32 times in parallel. From the perspective of the hardware, each of the 32 copies is executed on a different lane of a single SIMD vector. But if each copy is running the same code, how do they ever compute different values? In the same way that for the CPU vector implementation you had to initialize different lanes of your vectors with different data in order to get them to generate different pixels, we need a way for each instance of the kernel to know what pixel it’s supposed to compute.</p>
+<p>For our launch configuration, CUDA exposes the index of each kernel instance in a special integer variable called <code>threadIdx.x</code>. In the first lane of the implicit SIMD vector this will have the value <code>0</code>, in the second it will have value <code>1</code>, and so on.</p>
+<p>Using that, your next job is to implement <code>mandelbrot_gpu_vector</code> so that it computes 32-wide rows of pixels at a time when launched by <code>launch_mandelbrot_gpu_vector</code>. Don’t worry if the control flow is different across different instances of your kernel. Even though it executes in SIMD style, the hardware knows how to ensure that your program executes <em>as if</em> every instance were running independently.</p>
+<p>As before, you can run your GPU code with Telerun:</p>
+<pre><span class="highlight-source highlight-shell highlight-bash"><span class="highlight-meta highlight-function-call highlight-shell"><span class="highlight-variable highlight-function highlight-shell">python3</span></span><span class="highlight-meta highlight-function-call highlight-arguments highlight-shell"> telerun.py submit mandelbrot_gpu.cu</span>
+</span></pre>
+<blockquote>
+<p><strong>Question 3 for final write-up</strong>: How does the performance of your vectorized implementation compare to the scalar versions? Given how you implemented the vector-parallel CPU version with explicit SIMD, how do you think the GPU executes multiple kernel instances that run different numbers of iterations?</p>
+</blockquote>
+<!--
+**William: maybe turn this into a question:**
+- in the CPU version, one of the hardest things was managing the divergent **control flow** when the pixels in different vector lanes need to run for different numbers of iterations
+- in the vector-parallel GPU version, the GPU implicitly maintains (predication) masks analogous to the masks that you have to use explicitly in the CPU version to track and control which lanes are activate at what time.
+- at the beginning of the next lab, we'll dig deeper into the performance implications of this fact.
+-->
+<h2>Deliverables</h2>
+<h3>Checkpoint (Due Monday September 8, 11:59pm)</h3>
+<p>For this week, you do not need to submit any code for the initial checkpoint, but you should have made some effort to install and use Telerun, and to implement the first two functions we ask you to implement (GPU scalar and CPU vector).</p>
+<p>On the Gradescope assignment “Lab 1 Checkpoint,” submit brief answers to the three prompts checking in about how you’re doing with the lab.</p>
+<h3>Final (Due Friday, September 12, 11:59pm)</h3>
+<p>On the Gradescope assignment “Lab 1 Final,” submit your <strong>completed code</strong> (<code>mandelbrot_cpu.cpp</code> and <code>mandelbrot_gpu.cu</code>), as well as a short PDF writeup containing your answers to Questions 1-3 above, as well as (optionally) anything else you’d like to highlight.</p>
+<p>For this lab, your code will be graded primarily on correctness. (Future labs will focus more on optimizing code to reach performance thresholds.)</p>
+<h3>Submission Details</h3>
+<p>You will be added to Gradescope / Telerun after the course lottery on Friday.</p>
+<p>In terms of submission, please <strong>make sure your final submission prints out the same logs as the starter code</strong>, otherwise the autograder may not work correctly. The autograder will hide your grade, so <strong>please do not spam the autograder</strong>. Instead, use Telerun from your local machine.</p>
+
+</main><footer><p><a href="https://mit.edu">Massachusetts Institute of Technology</a> —
+<a href="https://www.eecs.mit.edu">Department of Electrical Engineering and Computer Science</a></p>
+</footer></body></html>
