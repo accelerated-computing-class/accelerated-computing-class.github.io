@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en-us"><head><meta charset="utf-8"><title>6.S894</title><base href="/fall25/labs/"><meta content="width=device-width, initial-scale=1" name="viewport"><style>@font-face {
+<!DOCTYPE html><html lang="en-us"><head><meta charset="utf-8"><title>6.S894</title><base href="/fall25/labs/telerun-compiler-info/"><meta content="width=device-width, initial-scale=1" name="viewport"><style>@font-face {
     font-family: "Tex Gyre Heros";
     src: url("/fall25/assets/font/tex-gyre-heros/texgyreheros-regular.otf") format("opentype");
     font-weight: regular;
@@ -28,29 +28,13 @@
 <p><a href="/fall25/resources">Resources</a></p>
 <p><a href="/fall25/contact">Contact</a></p>
 <p><a href="/fall25/piazza">Piazza</a></p>
-</nav></header><main><h1>Assignments</h1>
-<h2>Labs</h2>
-<ul>
-<li><a href="/fall25/labs/lab1">Lab 1</a> – SIMD Mandelbrot</li>
-</ul>
-
-<h2>Telerun Information</h2>
-<ul>
-<li><a href="/fall25/labs/telerun-compiler-info">Telerun compiler information</a></li>
-</ul>
-
-<p><br/><br/><br/></p>
-<h2>Infrastructure support</h2>
-<p>Course infrastructure is made possible by generous support from <a href="https://www.janestreet.com/performance-engineering/">Jane Street</a>.</p>
-
-<div style="margin-left: 1rem">
-<a href="https://www.janestreet.com/performance-engineering/">
-    <img alt="Jane Street logo" src="/fall25/assets/janestreet_logo_horizontal.png" width="200rem" />
-</a>
-</div>
-<br/>
-<br/>
-<br/>
+</nav></header><main><h1>Telerun Compiler Information</h1>
+<h2>CPU Compiler Flags</h2>
+<p>All CPU jobs on Telerun are run on AMD Ryzen 7 7700 Zen 4 CPUs. We compile your cpp files with:</p>
+<p><code>clang++ -O3 -march=x86-64-v4 -o</code></p>
+<h2>GPU Compiler Flags</h2>
+<p>GPU jobs on Telerun are run on NVIDIA RTX 4000 Ada GPUs, compiled on CUDA 11.8 using:</p>
+<p><code>nvcc -O3 ---use_fast_math -gencode=arch=compute_89,code=sm_89 -gencode=arch=compute_89,code=compute_89 -o</code></p>
 </main><footer><p><a href="https://mit.edu">Massachusetts Institute of Technology</a> —
 <a href="https://www.eecs.mit.edu">Department of Electrical Engineering and Computer Science</a></p>
 </footer></body></html>
