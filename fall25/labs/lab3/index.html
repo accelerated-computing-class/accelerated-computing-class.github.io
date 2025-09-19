@@ -1,0 +1,675 @@
+<!DOCTYPE html><html lang="en-us"><head><meta charset="utf-8"><title>6.S894</title><base href="/fall25/labs/lab3/"><meta content="width=device-width, initial-scale=1" name="viewport"><style>@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall25/assets/font/tex-gyre-heros/texgyreheros-regular.otf") format("opentype");
+    font-weight: regular;
+    font-style: regular;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall25/assets/font/tex-gyre-heros/texgyreheros-bold.otf") format("opentype");
+    font-weight: bold;
+    font-style: regular;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall25/assets/font/tex-gyre-heros/texgyreheros-italic.otf") format("opentype");
+    font-weight: regular;
+    font-style: italic;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall25/assets/font/tex-gyre-heros/texgyreheros-bolditalic.otf") format("opentype");
+    font-weight: bold;
+    font-style: italic;
+}</style><link href="/fall25/assets/main.css" rel="stylesheet"><link crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css" integrity="sha384-wcIxkf4k558AjM3Yz3BBFQUbk/zgIYC2R0QpeeYb+TwlBVMrlgLqwRjRtGZiK7ww" rel="stylesheet"><link href="/fall25/assets/favicon.png" rel="icon" type="image/png"></head><body><header><nav><h1><a href="/fall25/">6.S894</a></h1>
+<p><a href="/fall25/calendar">Calendar</a></p>
+<p><a href="/fall25/labs">Labs</a></p>
+<p><a href="/fall25/lectures">Lectures</a></p>
+<p><a href="/fall25/syllabus">Syllabus</a></p>
+<p><a href="/fall25/resources">Resources</a></p>
+<p><a href="/fall25/contact">Contact</a></p>
+<p><a href="/fall25/piazza">Piazza</a></p>
+</nav></header><main><h1>Lab 3: Wave Simulation</h1>
+<h2>Prologue: Logistics</h2>
+<h3>Due Dates</h3>
+<p>For this lab, you’ll be turning in the following deliverables:</p>
+<ul>
+<li>
+<p><strong>Checkpoint:</strong> Due Monday, September 22, 11:59pm. On the Gradescope assignment for the Lab 3 checkpoint, submit your answers to the prelab questions (Part 0 of the lab) and a working version of Part 1 in <code>wave.cu</code>.</p>
+</li>
+<li>
+<p><strong>Final Submission:</strong> Due Friday, September 26, 11:59pm. On the Gradescope assignments for Lab 3, submit your <strong>completed code</strong>  as well as a PDF writeup containing your answers to the Questions below.</p>
+</li>
+</ul>
+<p><strong>Important:</strong> Note that starting this week, the <strong>checkpoints</strong> are going to
+become a little more substantive; for this lab’s checkpoint, you’ll be expected
+to have a working (but not necessarily fast) version of the naive GPU
+implementation from Part 1.</p>
+<h3>Starter Code</h3>
+<p>You can get the starter code for this lab by cloning the <a href="https://github.com/accelerated-computing-class/lab3">lab
+repository</a>:</p>
+<pre><span class="highlight-source highlight-shell highlight-bash"><span class="highlight-meta highlight-function-call highlight-shell"><span class="highlight-variable highlight-function highlight-shell">git</span></span><span class="highlight-meta highlight-function-call highlight-arguments highlight-shell"> clone git@github.com:accelerated-computing-class/lab3.git</span>
+</span></pre>
+<h2>Introduction</h2>
+<h3>Goals for This Lab</h3>
+<p>In labs 1 and 2, we implemented parallel algorithms for visualizing the
+Mandelbrot fractal. One of the things we noticed about our Mandelbrot workload
+was that it was <strong>compute-dominated</strong> – almost all the run time of the program
+was spent executing arithmetic instructions on variables in registers, with a
+negligible amount of time spent writing results to memory.</p>
+<p>In this lab, we’ll begin looking at workloads in which the <strong>cost of accessing
+memory</strong> is a major constraint, and investigating how we can exploit
+<strong>locality</strong> to make more efficient use of the memory resources we have. To do
+this, we’ll be writing CUDA programs to simulate the <a href="https://en.wikipedia.org/wiki/Wave_equation">physics of
+waves</a> on GPUs, which will let us
+generate pictures that look like this:</p>
+<p><img src="images/wave_cpu_small_scale.png" alt="double slit experiment simulation" /></p>
+<p>(This particular image shows a simulation of the famous <a href="https://en.wikipedia.org/wiki/Double-slit_experiment">double slit
+experiment</a>.)</p>
+<p>Like our Mandelbrot workload, this wave simulation workload will involve
+repeatedly applying a sequence of math operations at every position in a 2D
+array. Unlike Mandelbrot, our wave simulation will require each pixel to
+<strong>communicate with its neighbors</strong> on every iteration. As we will see,
+introducing this communication between pixels will radically alter the nature of
+the problem.</p>
+<p>We’ll be looking at two strategies for implementing this kind of wave simulation
+on GPUs:</p>
+<ol>
+<li>
+<p>A <strong>“naive” approach</strong>, which directly accesses <strong>global memory</strong> on every
+timestep of the simulation.</p>
+</li>
+<li>
+<p>An <strong>optimized approach</strong>, which makes use of <strong>per-SM shared memory</strong> to
+reduce how often the program needs to access global memory.</p>
+</li>
+</ol>
+<p>Along the way, we’ll be looking at the GPU’s <strong>physical memory hierarchy</strong> in
+more detail, and analyzing the kinds of bottlenecks that can show up in programs
+that interact heavily with memory.</p>
+<h3>Background: Our GPU’s Memory Hierarchy</h3>
+<p>Our RTX 4000 Ada has a 4-level memory hierarchy, containing:</p>
+<ul>
+<li>
+<p>A main <strong>DRAM memory</strong>. On our machine, this is made up of 5 parallel GDDR6
+chips, each 4 GB in capacity, with its own 32-bit interface, and running at 18
+GigaTransfers per second (GT/sec). In aggregate this provides 20 GB of
+capacity and 360 GB/sec of bandwidth.</p>
+</li>
+<li>
+<p>A 48 MB shared <strong>L2 cache</strong>. Loads and stores to DRAM generally all pass
+through this cache, and it provides about ~2.5 TB/sec of bandwidth.</p>
+</li>
+</ul>
+<!--
+L2 bandwidth estimated by:
+Starting with 4090 microbenchmark from: https://chipsandcheese.com/2022/11/02/microbenchmarking-nvidias-rtx-4090/
+= 5 TB/sec
+Scaling by 5/12 (48MB/160-bit in our GA104 vs. 6MB/384-bit in 3090 = GA102)
+Scaling by 1.56/1.695 boost clock ratio.
+= 1.54 TB/sec
+-->
+<!--
+TODO: decypher & mention L2 cache line size? I think there's actually 1x512kB L2 attached to each 32-bit memory controller:
+https://www.nvidia.com/content/PDF/nvidia-ampere-ga-102-gpu-architecture-whitepaper-v2.pdf
+This may actually mean memory transactions go separately to separate slices of L2, each of which would have smaller cache line sizes?
+-->
+<ul>
+<li>
+<p>128 KB of <strong>SRAM per-SM</strong>, which can be partitioned between an <strong>L1 cache</strong>
+and an explicitly-managed <strong>scratchpad</strong>. These memories provide a bandwidth
+of 128 bytes per cycle (13.4 TB/sec aggregate across 48 SMs).</p>
+</li>
+<li>
+<p>64 KB of SRAM per-warp scheduler used as <strong>register file storage</strong>.</p>
+</li>
+</ul>
+<p><img src="images/memory_hierarchy_ada.svg" alt="Memory Hierarchy of RTX 4000 Ada" /></p>
+<p>The way this memory hierarchy is exposed to software is largely similar to what
+you are used to from mainstream CPUs, with a few key exceptions. In particular,
+while the shared L2 behaves like a normal cache – implicitly caching all normal
+loads and stores from DRAM – the per-SM L1 cache is <strong>not coherent</strong> across
+SMs. As a result, most normal loads and stores <strong>bypass</strong> the L1.</p>
+<p>Why have the L1 at all, then? It is used for four things:</p>
+<ol>
+<li>
+<p>To cache <strong>CUDA thread-local</strong> memory. In particular, a CUDA kernel’s C stack
+is local to each CUDA thread so may safely be cached in the L1. </p>
+</li>
+<li>
+<p>To cache <strong>read-only</strong>
+global memory. If the compiler knows a given pointer points to memory which
+will only be read, and never written, during the lifetime of a kernel, it can
+safely be cached. Declaring pointers as both <code>const</code> and <code>__restrict__</code> is
+one way to communicate this to the compiler. It is also possible to
+explicitly perform L1-cached loads using the <code>__ldg</code> intrinsic. (Relevant
+discussion
+<a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#global-memory-5-x">here</a>.)</p>
+</li>
+<li>
+<p>To cache <strong>data which the compiler believes may change in the future</strong>, but can
+still benefit from being cached in L1 (at least on recent NVIDIA GPUs). As it
+stands, we haven’t reverse-engineered when the compiler may choose to do
+this.</p>
+</li>
+<li>
+<p>As a software-managed <strong>scratchpad</strong> – that is, a region of memory that
+<em>only</em> lives in this SRAM, and must have data explicitly copied in and out by
+your program code. NVIDIA somewhat confusingly calls this scratchpad “shared
+memory,” but it is only shared across a single CUDA block. We will discuss
+how to use this scratchpad in this lab.</p>
+</li>
+</ol>
+<p>This of course, is a simplified view of the L1 cache, and if you’re curious, you can read a bit more <a href="/fall25/resources/errata/l1-cache/">here</a>.</p>
+<h2>Part 0: Empirically Studying the Memory Subsystem</h2>
+<p>Before starting the lab, we will be studing the behavior of our GPU’s cache
+empirically. For this part, we will be writing some <strong>PTX code</strong>.</p>
+<blockquote>
+<p><strong>A note on PTX:</strong> When writing CPU programs or taking the performance
+engineering course, you may have written x86, ARM, or RISC-V assembly. This
+assembly represents the actual instruction stream your processor sees.
+While the processor may break instructions into micro-ops or exploit
+out-of-order execution, from the <em>software perspective</em>, this instruction
+stream directly dictates what the processor fetches to execute instructions.</p>
+<p>On the GPU, however, it is not possible to write a similar kind of assembly
+program. Instead, NVIDIA provides PTX, a virtualized instruction set
+architecture. PTX is <em>not</em> an ISA that can run directly on the GPU. In fact,
+PTX doesn’t even contain specific register numbers. When you compile PTX code,
+<code>nvcc</code> translates it into SASS, which consists of the actual machine-specific
+binary instructions that are executed by the hardware.</p>
+<p>The mapping between PTX and SASS is not one-to-one; the translation is
+complex, with multiple optimizations applied along the way. While there have
+been <a href="https://github.com/NervanaSystems/maxas">community efforts</a> to
+reverse-engineer SASS assemblers, NVIDIA does not provide an official
+assembler that allows programmers to author SASS directly.</p>
+</blockquote>
+<p>The GPU has three kinds of PTX load instructions (the instructions below are <code>f32</code> load instructions):</p>
+<div class="table-container"><table><thead><tr><th>Instruction</th><th>Cache Behavior</th></tr></thead><tbody>
+<tr><td><code>ld.global.ca.f32</code></td><td>Load cached in <strong>all levels</strong> (L1 and L2).</td></tr>
+<tr><td><code>ld.global.cg.f32</code></td><td>Load cached in <strong>global L2 cache only</strong>. Bypasses L1.</td></tr>
+<tr><td><code>ld.global.cv.f32</code></td><td><strong>Don’t cache</strong>. This invalidates the corresponding entry in the L2 cache, and fetches the line again on each load.</td></tr>
+</tbody></table>
+</div>
+<p>The <code>cv</code>, <code>ca</code>, and <code>cg</code>
+<a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#cache-operators">qualifiers</a>
+only serve as <em>hints</em> to <code>nvcc</code>. It may very well choose to
+ignore these hints and generate SASS that does not respect them.</p>
+<p>For the prelab, we will be studying the latency of each of these instructions. In
+<code>memory_latency.cu</code>, to measure the latency of memory fetches, write the
+corresponding <code>ldg</code> instruction variant for each case.</p>
+<blockquote>
+<p><strong>Prelab Question 1:</strong> Using the code you have written in <code>memory_latency.cu</code>, find the latency of a fetch from <strong>a)</strong> from global memory, <strong>b)</strong> the L2 cache, and <strong>c)</strong> the L1 cache.</p>
+</blockquote>
+<p><strong>Note:</strong> The functions may include some redundancy or weird access patterns:
+these are added intentionally to ensure that <code>nvcc</code> does not optimize our
+loads away.</p>
+<h3>Effects of Memory Coalescing</h3>
+<p>In this microbenchmark, we study the effects of <em>coalesced loads</em>. Coalesced
+loads occur when lanes in a warp access a consecutive region of memory,
+allowing the GPU to fetch data in a single memory transaction.</p>
+<p>For example, the following access pattern will result in coalesced loads:</p>
+<p><img src="images/coalesced_access.svg" alt="Coalesced Access" /></p>
+<p>In contrast, if lanes within a warp access memory with large strides, their
+requests fall into different memory transactions, increasing memory latency. The
+pattern below shows such a <em>non-coalesced access</em>:</p>
+<p><img src="images/non_coalesced_access.svg" alt="Non-Coalesced Access" /></p>
+<p>To study the effects of memory coalescing, you will implement two CUDA kernels in <code>coalesced-loads.cu</code>.
+Both kernels perform the same task: each lane loads <code>x</code> elements of data into
+memory. The key difference is which locations each lane will touch:</p>
+<ul>
+<li>
+<p>In <code>non_coalesced_load</code>, each block should load <code>x * blockDim.x</code>
+elements, with each lane responsible for a contiguous block of <code>x</code> elements.</p>
+</li>
+<li>
+<p>In <code>coalesced_load</code>, each block should again load <code>x * blockDim.x</code> elements,
+but each lane should be responsible for elements separated by a stride of <code>blockDim.x</code>.</p>
+</li>
+</ul>
+<blockquote>
+<p><strong>Prelab Question 2:</strong> What speedup did you observe for coalesced versus
+non-coalesced loads?</p>
+</blockquote>
+<h2>Part 1: Naive GPU Implementation</h2>
+<h3>Workload: Simulating the Wave Equation</h3>
+<p>The workload we’ll be studying in this lab is an algorithm for numerically
+simulating the <a href="https://en.wikipedia.org/wiki/Wave_equation">wave equation</a>, an
+idealized mathematical model of waves which can be used to describe diverse
+phenomena including sound waves in air, surface waves in water, and
+electromagnetic waves like visible light and radio transmissions.</p>
+<p>At its core, the algorithm we’re trying to optimize can be described by the
+following Python pseudocode:</p>
+<pre><span class="highlight-source highlight-python"><span class="highlight-meta highlight-statement highlight-for highlight-python"><span class="highlight-keyword highlight-control highlight-flow highlight-for highlight-python">for</span> <span class="highlight-meta highlight-generic-name highlight-python">i</span> <span class="highlight-meta highlight-statement highlight-for highlight-python"><span class="highlight-keyword highlight-control highlight-flow highlight-for highlight-in highlight-python">in</span></span></span><span class="highlight-meta highlight-statement highlight-for highlight-python"> <span class="highlight-meta highlight-function-call highlight-python"><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-support highlight-function highlight-builtin highlight-python">range</span></span><span class="highlight-punctuation highlight-section highlight-arguments highlight-begin highlight-python">(</span><span class="highlight-meta highlight-function-call highlight-arguments highlight-python"><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">n_steps</span></span></span><span class="highlight-punctuation highlight-section highlight-arguments highlight-end highlight-python">)</span></span><span class="highlight-punctuation highlight-section highlight-block highlight-for highlight-python">:</span></span>
+    <span class="highlight-meta highlight-statement highlight-for highlight-python"><span class="highlight-keyword highlight-control highlight-flow highlight-for highlight-python">for</span> <span class="highlight-meta highlight-generic-name highlight-python">y</span> <span class="highlight-meta highlight-statement highlight-for highlight-python"><span class="highlight-keyword highlight-control highlight-flow highlight-for highlight-in highlight-python">in</span></span></span><span class="highlight-meta highlight-statement highlight-for highlight-python"> <span class="highlight-meta highlight-function-call highlight-python"><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-support highlight-function highlight-builtin highlight-python">range</span></span><span class="highlight-punctuation highlight-section highlight-arguments highlight-begin highlight-python">(</span><span class="highlight-meta highlight-function-call highlight-arguments highlight-python"><span class="highlight-constant highlight-numeric highlight-integer highlight-decimal highlight-python">1</span><span class="highlight-punctuation highlight-separator highlight-arguments highlight-python">,</span> <span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">n_cells_y</span></span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">-</span> <span class="highlight-constant highlight-numeric highlight-integer highlight-decimal highlight-python">1</span></span><span class="highlight-punctuation highlight-section highlight-arguments highlight-end highlight-python">)</span></span><span class="highlight-punctuation highlight-section highlight-block highlight-for highlight-python">:</span></span> <span class="highlight-comment highlight-line highlight-number-sign highlight-python"><span class="highlight-punctuation highlight-definition highlight-comment highlight-python">#</span> between 100 and 10000
+</span>        <span class="highlight-meta highlight-statement highlight-for highlight-python"><span class="highlight-keyword highlight-control highlight-flow highlight-for highlight-python">for</span> <span class="highlight-meta highlight-generic-name highlight-python">x</span> <span class="highlight-meta highlight-statement highlight-for highlight-python"><span class="highlight-keyword highlight-control highlight-flow highlight-for highlight-in highlight-python">in</span></span></span><span class="highlight-meta highlight-statement highlight-for highlight-python"> <span class="highlight-meta highlight-function-call highlight-python"><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-support highlight-function highlight-builtin highlight-python">range</span></span><span class="highlight-punctuation highlight-section highlight-arguments highlight-begin highlight-python">(</span><span class="highlight-meta highlight-function-call highlight-arguments highlight-python"><span class="highlight-constant highlight-numeric highlight-integer highlight-decimal highlight-python">1</span><span class="highlight-punctuation highlight-separator highlight-arguments highlight-python">,</span> <span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">n_cells_x</span></span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">-</span> <span class="highlight-constant highlight-numeric highlight-integer highlight-decimal highlight-python">1</span></span><span class="highlight-punctuation highlight-section highlight-arguments highlight-end highlight-python">)</span></span><span class="highlight-punctuation highlight-section highlight-block highlight-for highlight-python">:</span></span> <span class="highlight-comment highlight-line highlight-number-sign highlight-python"><span class="highlight-punctuation highlight-definition highlight-comment highlight-python">#</span> between 100 and 1000
+</span>            <span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">damping</span></span> <span class="highlight-keyword highlight-operator highlight-assignment highlight-python">=</span> <span class="highlight-meta highlight-function-call highlight-python"><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-variable highlight-function highlight-python">get_damping</span></span><span class="highlight-punctuation highlight-section highlight-arguments highlight-begin highlight-python">(</span><span class="highlight-meta highlight-function-call highlight-arguments highlight-python"><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">x</span></span><span class="highlight-punctuation highlight-separator highlight-arguments highlight-python">,</span> <span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">y</span></span></span><span class="highlight-punctuation highlight-section highlight-arguments highlight-end highlight-python">)</span></span>
+            <span class="highlight-meta highlight-item-access highlight-python"><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">u0</span></span></span><span class="highlight-meta highlight-item-access highlight-python"><span class="highlight-punctuation highlight-section highlight-brackets highlight-begin highlight-python">[</span></span><span class="highlight-meta highlight-item-access highlight-arguments highlight-python"><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">y</span></span>, <span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">x</span></span></span><span class="highlight-meta highlight-item-access highlight-python"><span class="highlight-punctuation highlight-section highlight-brackets highlight-end highlight-python">]</span></span> <span class="highlight-keyword highlight-operator highlight-assignment highlight-python">=</span> <span class="highlight-meta highlight-group highlight-python"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-python">(</span>
+                  <span class="highlight-meta highlight-group highlight-python"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-python">(</span><span class="highlight-constant highlight-numeric highlight-float highlight-python">2<span class="highlight-punctuation highlight-separator highlight-decimal highlight-python">.</span>0</span>f <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">-</span> <span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">damping</span></span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">-</span> <span class="highlight-constant highlight-numeric highlight-float highlight-python">4<span class="highlight-punctuation highlight-separator highlight-decimal highlight-python">.</span>0</span>f<span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">*</span><span class="highlight-meta highlight-group highlight-python"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-python">(</span><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">c</span></span><span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">*</span><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">dt</span></span><span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">/</span><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">dx</span></span><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-python">)</span></span><span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">*</span><span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">*</span><span class="highlight-constant highlight-numeric highlight-integer highlight-decimal highlight-python">2</span><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-python">)</span></span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">*</span> <span class="highlight-meta highlight-item-access highlight-python"><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">u1</span></span></span><span class="highlight-meta highlight-item-access highlight-python"><span class="highlight-punctuation highlight-section highlight-brackets highlight-begin highlight-python">[</span></span><span class="highlight-meta highlight-item-access highlight-arguments highlight-python"><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">y</span></span>, <span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">x</span></span></span><span class="highlight-meta highlight-item-access highlight-python"><span class="highlight-punctuation highlight-section highlight-brackets highlight-end highlight-python">]</span></span>
+                <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">-</span> <span class="highlight-meta highlight-group highlight-python"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-python">(</span><span class="highlight-constant highlight-numeric highlight-float highlight-python">1<span class="highlight-punctuation highlight-separator highlight-decimal highlight-python">.</span>0</span>f <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">-</span> <span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">damping</span></span><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-python">)</span></span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">*</span> <span class="highlight-meta highlight-item-access highlight-python"><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">u0</span></span></span><span class="highlight-meta highlight-item-access highlight-python"><span class="highlight-punctuation highlight-section highlight-brackets highlight-begin highlight-python">[</span></span><span class="highlight-meta highlight-item-access highlight-arguments highlight-python"><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">y</span></span>, <span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">x</span></span></span><span class="highlight-meta highlight-item-access highlight-python"><span class="highlight-punctuation highlight-section highlight-brackets highlight-end highlight-python">]</span></span>
+                <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">+</span> <span class="highlight-meta highlight-group highlight-python"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-python">(</span><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">c</span></span><span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">*</span><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">dt</span></span><span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">/</span><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">dx</span></span><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-python">)</span></span><span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">*</span><span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">*</span><span class="highlight-constant highlight-numeric highlight-integer highlight-decimal highlight-python">2</span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">*</span> <span class="highlight-meta highlight-group highlight-python"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-python">(</span>
+                      <span class="highlight-meta highlight-item-access highlight-python"><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">u1</span></span></span><span class="highlight-meta highlight-item-access highlight-python"><span class="highlight-punctuation highlight-section highlight-brackets highlight-begin highlight-python">[</span></span><span class="highlight-meta highlight-item-access highlight-arguments highlight-python"><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">y</span></span>, <span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">x</span></span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">-</span> <span class="highlight-constant highlight-numeric highlight-integer highlight-decimal highlight-python">1</span></span><span class="highlight-meta highlight-item-access highlight-python"><span class="highlight-punctuation highlight-section highlight-brackets highlight-end highlight-python">]</span></span>
+                    <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">+</span> <span class="highlight-meta highlight-item-access highlight-python"><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">u1</span></span></span><span class="highlight-meta highlight-item-access highlight-python"><span class="highlight-punctuation highlight-section highlight-brackets highlight-begin highlight-python">[</span></span><span class="highlight-meta highlight-item-access highlight-arguments highlight-python"><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">y</span></span>, <span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">x</span></span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">+</span> <span class="highlight-constant highlight-numeric highlight-integer highlight-decimal highlight-python">1</span></span><span class="highlight-meta highlight-item-access highlight-python"><span class="highlight-punctuation highlight-section highlight-brackets highlight-end highlight-python">]</span></span>
+                    <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">+</span> <span class="highlight-meta highlight-item-access highlight-python"><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">u1</span></span></span><span class="highlight-meta highlight-item-access highlight-python"><span class="highlight-punctuation highlight-section highlight-brackets highlight-begin highlight-python">[</span></span><span class="highlight-meta highlight-item-access highlight-arguments highlight-python"><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">y</span></span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">-</span> <span class="highlight-constant highlight-numeric highlight-integer highlight-decimal highlight-python">1</span>, <span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">x</span></span></span><span class="highlight-meta highlight-item-access highlight-python"><span class="highlight-punctuation highlight-section highlight-brackets highlight-end highlight-python">]</span></span>
+                    <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">+</span> <span class="highlight-meta highlight-item-access highlight-python"><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">u1</span></span></span><span class="highlight-meta highlight-item-access highlight-python"><span class="highlight-punctuation highlight-section highlight-brackets highlight-begin highlight-python">[</span></span><span class="highlight-meta highlight-item-access highlight-arguments highlight-python"><span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">y</span></span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-python">+</span> <span class="highlight-constant highlight-numeric highlight-integer highlight-decimal highlight-python">1</span>, <span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">x</span></span></span><span class="highlight-meta highlight-item-access highlight-python"><span class="highlight-punctuation highlight-section highlight-brackets highlight-end highlight-python">]</span></span>
+                <span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-python">)</span></span>
+            <span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-python">)</span></span>
+
+    <span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">u0</span></span>, <span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">u1</span></span> <span class="highlight-keyword highlight-operator highlight-assignment highlight-python">=</span> <span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">u1</span></span>, <span class="highlight-meta highlight-qualified-name highlight-python"><span class="highlight-meta highlight-generic-name highlight-python">u0</span></span>
+</span></pre>
+<p>Here, <code>u0</code> and <code>u1</code> are pointers to 2D <code>float</code> arrays of size <code>n_cells_y</code> by
+<code>n_cells_x</code>, and <code>c</code>, <code>dt</code>, and <code>dx</code> are scalar constants. The function
+<code>get_damping</code> is some arbitrary, relatively cheap-to-compute function of <code>x</code> and
+<code>y</code>. The actual code we’ll be working with in the lab includes a few extra
+complications compared to the pseudocode shown above, but the code above
+accounts for the bulk of the work in the program.</p>
+<p>Just like with Mandelbrot, we’re not concerned with the mathematics of the wave
+equation or with how this code was derived; we’re only concerned with making
+this algorithm <strong>run fast</strong>. From a performance engineering perspective, here
+are some important observations:</p>
+<ol>
+<li>
+<p><strong>The algorithm is divided into timesteps.</strong> <br>
+The buffers <code>u0</code> and <code>u1</code> track the state of the wave as it evolves over
+time.</p>
+</li>
+<li>
+<p><strong><code>u0</code> and <code>u1</code> swap buffers on each timestep.</strong> <br>
+At the start of each timestep, <code>u0</code> points to a buffer representing the
+second-most-recent state of the wave, and <code>u1</code> points to a buffer
+representing the most recent state. The buffer <code>u0</code> also serves double-duty
+as the <strong>output</strong> buffer for updating the state, so we
+<a href="https://en.wikipedia.org/wiki/Multiple_buffering">swap</a> which buffers the
+variables <code>u0</code> and <code>u1</code> point to on each timestep.</p>
+</li>
+<li>
+<p><strong>Pixels communicate with their neighbors.</strong> <br>
+On every timestep, we update the value of <code>u0[y, x]</code> based on the current
+values of <code>u0[y, x]</code> and <code>u1[y, x]</code>, as well as the <code>u1</code> values of
+orthogonally-adjacent pixels.</p>
+</li>
+<li>
+<p><strong>Pixels communicate <em>only</em> with their neighbors.</strong> <br>
+Information propagates a distance of at most one pixel per timestep.</p>
+</li>
+<li>
+<p><strong>Pixels can be updated in parallel on each timestep.</strong> <br>
+The <em>new</em> value of a pixel on a given timestep does not depend on the <em>new</em>
+values of any other pixels.</p>
+</li>
+<li>
+<p><strong>There are a lot of pixels.</strong> <br>
+For the sizes we’ll be looking at, there will be tens of thousands to
+millions of pixels.</p>
+</li>
+</ol>
+<p>(Workloads with structures similar to this one are sometimes called <a href="https://en.wikipedia.org/wiki/Iterative_Stencil_Loops">“stencil
+computations.”</a>)</p>
+<h3>Understanding the Starter Code</h3>
+<p>The file <code>wave.cu</code> already contains an unoptimized reference implementation of
+our wave simulator written for the CPU, which you can find in the functions
+<code>wave_cpu_step</code> and <code>wave_cpu</code>. We recommend taking some time to familiarize
+yourself with the source code of those two functions before moving on.</p>
+<p>A few points about the CPU reference implementation:</p>
+<ol>
+<li>
+<p><strong>Extra features: sources and walls.</strong> <br>
+Going beyond the pseudocode shown in the previous section, the starter code
+contains extra logic for handling special “source” pixels which create
+waves, and “wall” pixels which reflect waves. This is necessary in order to
+simulate interesting scenes like the double slit experiment. You should
+include all the same logic in your GPU implementations.</p>
+</li>
+<li>
+<p><strong>The <code>Scene</code> template parameter.</strong> <br>
+We’ve factored out some details of the simulation into the template
+parameter <code>Scene</code>, which allows external code to specify various
+<a href="https://en.cppreference.com/w/cpp/language/constexpr">constants</a> and
+<a href="https://en.cppreference.com/w/cpp/language/static">static functions</a>
+relevant to the simulation. You can assume this <code>Scene</code> type exposes an API
+like the following:</p>
+<pre><span class="highlight-source highlight-c++"><span class="highlight-meta highlight-struct highlight-c++"><span class="highlight-storage highlight-type highlight-c++">struct</span> <span class="highlight-entity highlight-name highlight-struct highlight-c++">ExampleScene</span></span><span class="highlight-meta highlight-struct highlight-c++"> <span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-begin highlight-c++">{</span></span></span><span class="highlight-meta highlight-struct highlight-c++"><span class="highlight-meta highlight-block highlight-c++">
+    <span class="highlight-storage highlight-modifier highlight-c++">constexpr</span> <span class="highlight-storage highlight-modifier highlight-c++">static</span> <span class="highlight-support highlight-type highlight-stdint highlight-c">int32_t</span> n_cells_x<span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+    <span class="highlight-storage highlight-modifier highlight-c++">constexpr</span> <span class="highlight-storage highlight-modifier highlight-c++">static</span> <span class="highlight-support highlight-type highlight-stdint highlight-c">int32_t</span> n_cells_y<span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+    <span class="highlight-storage highlight-modifier highlight-c++">constexpr</span> <span class="highlight-storage highlight-modifier highlight-c++">static</span> <span class="highlight-storage highlight-type highlight-c">float</span> c<span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+    <span class="highlight-storage highlight-modifier highlight-c++">constexpr</span> <span class="highlight-storage highlight-modifier highlight-c++">static</span> <span class="highlight-storage highlight-type highlight-c">float</span> dx<span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+    <span class="highlight-storage highlight-modifier highlight-c++">constexpr</span> <span class="highlight-storage highlight-modifier highlight-c++">static</span> <span class="highlight-storage highlight-type highlight-c">float</span> dt<span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+
+    <span class="highlight-storage highlight-modifier highlight-c++">static</span> <span class="highlight-storage highlight-type highlight-c">bool</span> <span class="highlight-meta highlight-method highlight-c++"><span class="highlight-entity highlight-name highlight-function highlight-c++">is_wall</span></span><span class="highlight-meta highlight-method highlight-parameters highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span></span></span><span class="highlight-meta highlight-method highlight-parameters highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-support highlight-type highlight-stdint highlight-c">int32_t</span> <span class="highlight-variable highlight-parameter highlight-c++">idx_x</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-support highlight-type highlight-stdint highlight-c">int32_t</span> <span class="highlight-variable highlight-parameter highlight-c++">idx_y</span><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span></span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+    <span class="highlight-storage highlight-modifier highlight-c++">static</span> <span class="highlight-storage highlight-type highlight-c">bool</span> <span class="highlight-meta highlight-method highlight-c++"><span class="highlight-entity highlight-name highlight-function highlight-c++">is_source</span></span><span class="highlight-meta highlight-method highlight-parameters highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span></span></span><span class="highlight-meta highlight-method highlight-parameters highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-support highlight-type highlight-stdint highlight-c">int32_t</span> <span class="highlight-variable highlight-parameter highlight-c++">idx_x</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-support highlight-type highlight-stdint highlight-c">int32_t</span> <span class="highlight-variable highlight-parameter highlight-c++">idx_y</span><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span></span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+    <span class="highlight-storage highlight-modifier highlight-c++">static</span> <span class="highlight-storage highlight-type highlight-c">float</span> <span class="highlight-meta highlight-method highlight-c++"><span class="highlight-entity highlight-name highlight-function highlight-c++">source_value</span></span><span class="highlight-meta highlight-method highlight-parameters highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span></span></span><span class="highlight-meta highlight-method highlight-parameters highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-support highlight-type highlight-stdint highlight-c">int32_t</span> <span class="highlight-variable highlight-parameter highlight-c++">idx_x</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-support highlight-type highlight-stdint highlight-c">int32_t</span> <span class="highlight-variable highlight-parameter highlight-c++">idx_y</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-storage highlight-type highlight-c">float</span> <span class="highlight-variable highlight-parameter highlight-c++">t</span><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span></span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+    <span class="highlight-storage highlight-modifier highlight-c++">static</span> <span class="highlight-storage highlight-type highlight-c">float</span> <span class="highlight-meta highlight-method highlight-c++"><span class="highlight-entity highlight-name highlight-function highlight-c++">damping</span></span><span class="highlight-meta highlight-method highlight-parameters highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span></span></span><span class="highlight-meta highlight-method highlight-parameters highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-support highlight-type highlight-stdint highlight-c">int32_t</span> <span class="highlight-variable highlight-parameter highlight-c++">idx_x</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-support highlight-type highlight-stdint highlight-c">int32_t</span> <span class="highlight-variable highlight-parameter highlight-c++">idx_y</span><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span></span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+</span></span><span class="highlight-meta highlight-struct highlight-c++"><span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-end highlight-c++">}</span></span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+</span></pre>
+<p>You’re not responsible for understanding the implementation of the <code>Scene</code>
+type, only its interface. You may assume that any functions in the <code>Scene</code>
+type can be safely and efficiently called from <strong>both the CPU and the GPU</strong>.
+(<a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#function-execution-space-specifiers">CUDA makes that
+possible!</a>)</p>
+<p>An appropriate <code>Scene</code> type will be provided to your GPU implementations as
+a template parameter, the same way it is provided to the CPU reference
+implementation.</p>
+</li>
+<li>
+<p><strong>The buffers <code>u0</code> and <code>u1</code>.</strong> <br>
+Like the pseudocode in the previous section, the CPU reference
+implementation uses variables <code>u0</code> and <code>u1</code> to point to buffers holding the
+previous state and current state of the wave, respectively. It also reuses
+the buffer in <code>u0</code> as an output buffer on each timestep, and consequently
+must swap the buffer pointers between <code>u0</code> and <code>u1</code> at the end of each
+timestep.</p>
+<p>At the end of <code>wave_cpu</code>, the function returns the pointers currently held
+in <code>u0</code> and <code>u1</code>, which may or may not be swapped relative to their original
+positions. Returning these pointers is important in order for the
+test/benchmark harness to know which buffer holds the final state of the
+wave. You should follow the same policy in your GPU implementations.</p>
+</li>
+<li>
+<p><strong>Array layout.</strong> <br>
+We adopt a <strong>“y-major”</strong> data layout for all our arrays, so that <code>idx_x</code> is
+the faster-moving index and <code>idx_y</code> is the slower-moving index.</p>
+</li>
+<li>
+<p><strong>Performance vs. Correctness Tests.</strong> <br>
+By default, we only run correctness tests on slow test cases. However, we provide performance tests on larger test cases with the <code>-p</code> flag. Please only run performance tests when you are confident that correctness is passing, as these tests are slow and can clog the Telerun queue.</p>
+</li>
+</ol>
+<p>We encourage you to experiment with changing any part of the starter code that
+you want, but we ask that you please restore the CPU reference implementation
+and the test/benchmark harness to their original state before submitting your
+code for grading.</p>
+<h3>Generating Animations</h3>
+<p>The starter code lets you generate animations of your wave simulations!
+Animations are disabled by default, but you can enable them by passing the flag
+<code>-a</code> on the command line:</p>
+<pre><span class="highlight-source highlight-shell highlight-bash"><span class="highlight-meta highlight-function-call highlight-shell"><span class="highlight-variable highlight-function highlight-shell">python3</span></span><span class="highlight-meta highlight-function-call highlight-arguments highlight-shell"> telerun.py wave.cu<span class="highlight-variable highlight-parameter highlight-option highlight-shell"><span class="highlight-punctuation highlight-definition highlight-parameter highlight-shell"> -</span>a</span></span>
+</span></pre>
+<p>The generated animations will be saved to <code>./telerun-out</code>.</p>
+<p>To begin, we’ll implement a wave simulation on the GPU which accesses memory
+“naively,” with no special optimizations related to memory access.</p>
+<p>In order to implement this part, it will be helpful to be aware of a fact about
+CUDA which we haven’t previously discussed in Lab 1 or Lab 2, namely:</p>
+<blockquote>
+<p>If you <strong>launch multiple kernel invocations in sequence</strong>, they are guaranteed
+to <strong>execute in sequence</strong> with respect to each other; each kernel invocation
+will finish completely before the next kernel invocation begins execution.</p>
+</blockquote>
+<p>(Note that this is just the <em>default</em> behavior of kernel launches in CUDA. There
+are <a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#streams">ways to opt out of
+it</a> if
+you want to run multiple kernels in parallel. But the default behavior will be
+all we need for this lab.)</p>
+<p>We care that kernel invocations launched in sequence will execute in sequence
+because our wave simulation workload inherently requires <strong>synchronization</strong>
+between pixels: we can’t start computing timestep <code>i + 2</code> for one pixel until
+we’ve finished computing timestep <code>i + 1</code> for its neighbors. The simplest way to
+achieve this is ensure that we don’t start computing timestep <code>i + 2</code> for <em>any</em>
+pixels until we’ve finished computing timestep <code>i + 1</code> for <em>all</em> pixels.
+Sequential kernel launches provide exactly the synchronization primitive we need
+in order to enforce such a constraint: we can simply perform one kernel launch
+for each timestep.</p>
+<p>Following the idea of performing one kernel launch per timestep, we’re ready to
+write some code!</p>
+<blockquote>
+<p><strong>Deliverable:</strong> In the file <code>wave.cu</code>, implement the functions
+<code>wave_gpu_naive_step</code> and <code>wave_gpu_naive</code> so that they compute the same
+output as the CPU reference implementation (modulo floating point error). The
+kernel <code>wave_gpu_naive_step</code> should compute one timestep of the algorithm, and
+the CPU-side launch function <code>wave_gpu_naive</code> should launch as many
+invocations of that kernel as there are timesteps.</p>
+</blockquote>
+<p>You may find it helpful to refer to the function <code>wave_cpu_step</code> to see how it
+computes the update for a single timestep, and to refer to the function
+<code>wave_cpu</code> to see how it manages the <code>u0</code> and <code>u1</code> pointers.</p>
+<p>We encourage you to apply any of the parallelization strategies we saw in Lab 1
+and Lab 2 to accelerate this implementation – you can partition the work across
+as many blocks and warps as you see fit. (Note that we only really care about
+performance on the “large-scale tests” in the benchmark harness; the
+“small-scale” tests are mainly for testing correctness.)</p>
+<p><strong>Tip: Multi-dimensional indices.</strong></p>
+<p>There’s one more feature of CUDA we haven’t mentioned yet which, while not
+strictly <em>necessary</em> to implement this kernel, might make implementing it much
+more <em>convenient</em>. That feature is <strong>multi-dimensional block and thread
+indices</strong>
+(<a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#thread-hierarchy">link</a>).</p>
+<p>So far, whenever we’ve talked about launching CUDA kernels, we’ve always
+launched them using <em>integers</em> to specify the number of blocks and the number of
+CUDA threads per block, like this:</p>
+<pre><span class="highlight-source highlight-c++"><span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> num_blocks <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> ... <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+<span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> block_size <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> ... <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+some_kernel<span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">&lt;&lt;</span><span class="highlight-keyword highlight-operator highlight-comparison highlight-c">&lt;</span>num_blocks<span class="highlight-punctuation highlight-separator highlight-c++">,</span> block_size<span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">&gt;&gt;</span><span class="highlight-keyword highlight-operator highlight-comparison highlight-c">&gt;</span><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span><span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> ... <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+</span></pre>
+<p>CUDA also provides a type called
+<a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#thread-hierarchy"><code>dim3</code></a>
+which allows you to factor the block count and the number of CUDA threads per
+block into <strong>up to 3 different dimensions</strong>, like this:</p>
+<pre><span class="highlight-source highlight-c++">dim3 num_blocks <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-meta highlight-function-call highlight-c++"><span class="highlight-variable highlight-function highlight-c++">dim3</span><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span></span></span><span class="highlight-meta highlight-function-call highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> x size <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> y size <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> z size <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span></span></span><span class="highlight-meta highlight-function-call highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+dim3 block_size <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-meta highlight-function-call highlight-c++"><span class="highlight-variable highlight-function highlight-c++">dim3</span><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span></span></span><span class="highlight-meta highlight-function-call highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> x size <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> y size <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> z size <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span></span></span><span class="highlight-meta highlight-function-call highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+some_kernel<span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">&lt;&lt;</span><span class="highlight-keyword highlight-operator highlight-comparison highlight-c">&lt;</span>num_blocks<span class="highlight-punctuation highlight-separator highlight-c++">,</span> block_size<span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">&gt;&gt;</span><span class="highlight-keyword highlight-operator highlight-comparison highlight-c">&gt;</span><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span><span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> ... <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+</span></pre>
+<p>When you factor your launch parameters into multiple dimensions, you can access
+your block and thread indices along each dimension separately using the
+variables <code>blockIdx.x</code>, <code>blockIdx.y</code>, etc.</p>
+<p>Note that these three-dimensional indices don’t have any particularly special
+significance in the hardware, and are really just a layer of notational
+convenience on top of a fundamentally <strong>linear</strong> index space operating behind
+the scenes.<sup class="footnote-reference"><a href="#3d_indices">1</a></sup> In the mapping to the underlying linear index space,
+<strong><code>x</code> is the fastest-moving index</strong>, and <strong><code>z</code> is the slowest</strong>. This means that
+CUDA threads with consecutive <code>x</code> indices typically belong to the same warp
+(unless you happen to be right on a warp boundary).</p>
+<h3>Analysis: Memory Access in the Naive Kernel</h3>
+<p>After implementing the code for Part 1, we can analyze it in terms of what we
+know about the GPU’s memory system at the hardware level:</p>
+<blockquote>
+<p><strong>Question 1 for final write-up:</strong> Walk through the following calculations in
+the context of the “large-scale tests” for the naive GPU implementation, which
+evaluate it on a domain of size <code>3201 * 3201</code> for <code>12800</code> timesteps:</p>
+<ol>
+<li>
+<p>How does the total size of the <code>u0</code> and <code>u1</code> buffers compare to the
+capacity of the L2 cache?</p>
+</li>
+<li>
+<p>Assuming the kernel makes no use of the L1 cache, roughly how many bytes is
+each launch of <code>wave_gpu_naive_step</code> requesting to load / store in the L2
+cache?</p>
+</li>
+<li>
+<p>Of those requests to L2, roughly how many bytes’ worth of requests miss L2
+and get through to DRAM?</p>
+</li>
+<li>
+<p>Given the number of bytes’ worth of requests that get through to DRAM,
+roughly how long would the naive GPU simulation take to run if the only
+constraint were DRAM bandwidth?</p>
+</li>
+<li>
+<p>Similarly, roughly how long would it take to run if the only constraint
+were L2 bandwidth?</p>
+</li>
+<li>
+<p>How do those estimates compare to your naive GPU implementation’s actual
+run time?</p>
+</li>
+<li>
+<p>Does your answer to (6) have any implications for attempts to optimize the
+implementation further?</p>
+</li>
+</ol>
+</blockquote>
+<h2>Part 2: GPU Version with Shared Memory Optimizations</h2>
+<p>Our naive GPU implementation from Part 1 has a fundamental limitation: on every
+timestep, it has to load the entire simulation state from global memory, and
+store all the updates to the simulation state to global memory. Using global
+memory forces us to touch either the L2 cache or DRAM on every access. We know
+from earlier that every SM on our GPU comes equipped with a <strong>local SRAM</strong>,
+which is faster than either the L2 cache or DRAM. Can we somehow use it?</p>
+<p>The SRAM on each SM is only 128 KB, so it can’t fit the <code>u0</code> / <code>u1</code> buffers in
+their entirety. One natural strategy to deal with this might be for each SM to
+load a <strong>subset</strong> of the simulation state into its SRAM, compute on that subset
+for multiple timesteps, and then store the results back to global memory. That
+way, the cost of accessing global memory would be amortized over multiple
+timesteps of the simulation. Could something like that work?</p>
+<p>If we try to have every SM load a subset of the simulation state – say, a
+square tile – into its SRAM, we immediately run into a problem: updating any
+pixel requires knowing the values of its neighbors, and there will inevitably be
+some pixels on the edge of our subset whose neighbors’ values we don’t know.</p>
+<p>However, recall that our workload has a nice <strong>locality</strong> property: information
+propagates at a maximum speed of one pixel per timestep. That means that even if
+we can’t compute updates for the pixels on the <strong>edge</strong> of our subset, we can
+still compute correct updates for pixels <strong>closer to the center</strong>. Over the
+course of multiple timesteps, the number of pixels in our subset whose values we
+can accurately compute will <strong>shrink</strong>, because information will have had time
+to propagate from the subset’s unknown neighbors towards its center. Eventually,
+this “valid region” in our subset will shrink to zero. But if we store the
+results back to global memory before then, we can extract useful work from a
+scheme like this.</p>
+<p>We present a visualization below of what an implementation following this
+strategy could look like from the perspective of a single SM:</p>
+<p><img src="images/tiling.svg" style="width: 50%; padding-left: 25%;
+padding-right: 25%;"></img></p>
+<p>Our goal in this section will be to improve over our naive implementation from
+Part 1 by implementing a version of our GPU wave simulation which exploits a
+local data reuse strategy like the one shown above. Before we can do that,
+though, we’ll need to look at how the SM’s local SRAM resources are exposed in
+the CUDA programming model.</p>
+<h3>Using Shared Memory in CUDA</h3>
+<p>CUDA supports using the SRAM on each SM in two different ways: by default the
+entire SRAM is used only as <strong>per-CUDA-thread local memory</strong> and as an <strong>L1
+cache for read-only data</strong>, but parts of it can be <strong>partitioned</strong> for use as an
+<strong>explicitly-addressed scratchpad</strong> that multiple CUDA threads on the SM can
+read and write to. For this workload, we want to be able to both read from and
+update the data in the SRAM over the course of multiple timesteps, so we’ll be
+using it in scratchpad mode.</p>
+<p>When you’re using (part of) the SM’s SRAM in scratchpad mode, NVIDIA calls the
+scratchpad <strong>“shared memory,”</strong> because it’s shared at the block level between
+warps. The modern way<sup class="footnote-reference"><a href="#shmem_modern">2</a></sup> to access shared memory in CUDA is to use
+<a href="https://developer.nvidia.com/blog/using-shared-memory-cuda-cc/">“dynamic shared
+memory,”</a> which
+requires you to declare a special variable with the syntax <code>extern __shared__</code>
+inside your kernel:</p>
+<pre><span class="highlight-source highlight-c++">__global__ <span class="highlight-storage highlight-type highlight-c">void</span> <span class="highlight-meta highlight-function highlight-c++"><span class="highlight-entity highlight-name highlight-function highlight-c++">my_kernel</span></span><span class="highlight-meta highlight-function highlight-parameters highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span></span></span><span class="highlight-meta highlight-function highlight-parameters highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> ... <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span></span><span class="highlight-meta highlight-function highlight-c++"> </span><span class="highlight-meta highlight-function highlight-c++"><span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-begin highlight-c++">{</span></span></span><span class="highlight-meta highlight-function highlight-c++"><span class="highlight-meta highlight-block highlight-c++">
+
+    <span class="highlight-comment highlight-line highlight-double-slash highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">//</span> &#39;float&#39; type can be replaced with anything.
+</span>    <span class="highlight-comment highlight-line highlight-double-slash highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">//</span> empty square brackets are required!
+</span>    <span class="highlight-storage highlight-modifier highlight-c++">extern</span> __shared__ <span class="highlight-storage highlight-type highlight-c">float</span> my_shared_memory<span class="highlight-meta highlight-brackets highlight-c++"><span class="highlight-punctuation highlight-section highlight-brackets highlight-begin highlight-c++">[</span><span class="highlight-punctuation highlight-section highlight-brackets highlight-end highlight-c++">]</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+
+    <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> ... <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span>
+</span></span><span class="highlight-meta highlight-function highlight-c++"><span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-end highlight-c++">}</span></span></span>
+</span></pre>
+<p>and to then specify the <strong>size per block</strong> of the shared memory as an <strong>extra
+parameter when you launch the kernel</strong>:</p>
+<pre><span class="highlight-source highlight-c++"><span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> num_blocks <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> ... <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+<span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> block_size <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> ... <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+<span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> shmem_size_bytes <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> ... <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+my_kernel<span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">&lt;&lt;</span><span class="highlight-keyword highlight-operator highlight-comparison highlight-c">&lt;</span>num_blocks<span class="highlight-punctuation highlight-separator highlight-c++">,</span> block_size<span class="highlight-punctuation highlight-separator highlight-c++">,</span> shmem_size_bytes<span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">&gt;&gt;</span><span class="highlight-keyword highlight-operator highlight-comparison highlight-c">&gt;</span><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span><span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> ... <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+</span></pre>
+<p>When your kernel runs, the variable you declared with <code>extern __shared__</code> will
+act like a pointer to an allocation whose size in bytes is equal to the size you
+provided when launching the kernel. Within each block, every CUDA thread will
+have access to the same shared memory.</p>
+<p>The GPU we’re using supports shared memory sizes of <strong>up to 100 KB per block</strong>,
+but for historical reasons, using more than 48 KB per block requires you to
+<strong>opt-in</strong> using a <a href="https://stackoverflow.com/a/63758543">special API</a>:</p>
+<pre><span class="highlight-source highlight-c++"><span class="highlight-comment highlight-line highlight-double-slash highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">//</span> Run this code before your kernel launch if you want to use shmem size &gt; 48 KB:
+</span><span class="highlight-support highlight-type highlight-stdint highlight-c">uint32_t</span> shmem_size_bytes <span class="highlight-keyword highlight-operator highlight-assignment highlight-c">=</span> <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> ... <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+<span class="highlight-meta highlight-function-call highlight-c++"><span class="highlight-variable highlight-function highlight-c++">CUDA_CHECK</span><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span></span></span><span class="highlight-meta highlight-function-call highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-meta highlight-function-call highlight-c++"><span class="highlight-variable highlight-function highlight-c++">cudaFuncSetAttribute</span><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-begin highlight-c++">(</span></span></span><span class="highlight-meta highlight-function-call highlight-c++"><span class="highlight-meta highlight-group highlight-c++">
+    my_kernel<span class="highlight-punctuation highlight-separator highlight-c++">,</span>
+    cudaFuncAttributeMaxDynamicSharedMemorySize<span class="highlight-punctuation highlight-separator highlight-c++">,</span>
+    shmem_size_bytes</span></span><span class="highlight-meta highlight-function-call highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span></span></span></span><span class="highlight-meta highlight-function-call highlight-c++"><span class="highlight-meta highlight-group highlight-c++"><span class="highlight-punctuation highlight-section highlight-group highlight-end highlight-c++">)</span></span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span>
+</span></pre>
+<p>Finally, just like on the CPU, correctly sharing memory between multiple
+concurrently-executing instruction streams requires <strong>synchronization</strong>. It is
+not safe for one CUDA thread to read a location in shared memory which another
+CUDA thread could be simultaneously writing, or vice versa. To avoid these kinds
+of <a href="https://en.wikipedia.org/wiki/Race_condition">race conditions</a>, you can use
+the special built-in function
+<a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=__syncthreads#synchronization-functions"><code>__syncthreads()</code></a>
+to enforce a synchronization
+<a href="https://en.wikipedia.org/wiki/Barrier_(computer_science)">barrier</a> among all
+CUDA threads in a block.</p>
+<h3>Implementation</h3>
+<p>Using CUDA’s shared memory and synchronization features, you have everything you
+need to implement a faster wave simulation on the GPU!</p>
+<blockquote>
+<p><strong>Deliverable:</strong> In the file <code>wave.cu</code>, implement the kernel
+<code>wave_gpu_shmem_multistep</code> and the CPU-side function <code>wave_gpu_shmem</code>. Use
+shared memory to compute multiple timesteps of simulation per kernel launch.</p>
+</blockquote>
+<p>Note that in <code>wave_gpu_shmem</code>, you’re given pointers to two extra preallocated
+scratch buffers of size <code>n_cells_y * n_cells_x</code> in GPU global memory, named
+<code>extra0</code> and <code>extra1</code>. Using these extra buffers is optional, but you may find
+one or both of them helpful while implementing your solution. The pointers you
+ultimately return from <code>wave_gpu_shmem</code>, which should point to buffers
+containing the state of the wave on the next-to-last and last timesteps,
+respectively, are allowed to point to any of the four buffers originally passed
+in to the function.</p>
+<p>You may find it helpful to consider the following:</p>
+<ul>
+<li>
+<p><strong>How many timesteps</strong> are you going to simulate per kernel launch? Can you
+design your kernel so that it’s easy to explore different values of that
+parameter?</p>
+</li>
+<li>
+<p>How are you going to handle cases where the value of <code>n_steps</code> passed in to
+<code>wave_gpu_shmem</code> is <strong>not a multiple</strong> of the number of timesteps you chose to
+simulate per kernel launch?</p>
+</li>
+<li>
+<p>How are you going to <strong>partition work between blocks</strong> in your kernel to
+ensure that every pixel in the output buffer is updated on every kernel
+launch? How does this interact with the shrinkage of the “valid region”
+relative to the size of the tile originally loaded into SRAM?</p>
+</li>
+<li>
+<p>How are you going to <strong>partition work between CUDA threads</strong> in your kernel?
+Is every CUDA thread in a block going to be responsible for exactly one pixel
+in the tile? (You may find it helpful to <strong>initially assume one CUDA thread
+per tile pixel</strong>, and then generalize your implementation further after you
+have a basic version working.)</p>
+</li>
+<li>
+<p>What data should live in <strong>shared memory</strong>, and what data should live in
+<strong>per-thread registers</strong>?</p>
+</li>
+<li>
+<p>What data do you need to <strong>write back to global memory</strong> at the end of each
+kernel invocation in order to have what you need to continue the simulation
+with the next kernel launch?</p>
+</li>
+<li>
+<p>How are you going to <strong>avoid out-of-bounds accesses</strong> in shared memory and
+global memory?</p>
+</li>
+</ul>
+<p>For measuring performance, we recommend only looking at the “large-scale tests”
+in the benchmark harness’s output.</p>
+<p>Once your wave simulator using shared memory is working, you can answer the
+final question of the lab:</p>
+<blockquote>
+<p><strong>Question 2 for final write-up:</strong> What speedup were you able to achieve over
+your naive GPU implementation from Part 1? What tradeoffs did you encounter
+when designing and implementing your solution? Did you hit any interesting
+bugs along the way?</p>
+</blockquote>
+<h2>Extensions</h2>
+<ul>
+<li>In the prelab, we measured the latency of a load from different levels of the
+cache. Design a micorbenchmark that measures the <em>bandwidth</em> of each
+level of the cache hierarchy.</li>
+</ul>
+<hr />
+<div class="footnote-definition" id="3d_indices"><sup class="footnote-definition-label">1</sup>
+<p>That’s why we deliberately didn’t discuss 3D indices in Lab 1 or
+Lab 2.</p>
+</div>
+<div class="footnote-definition" id="shmem_modern"><sup class="footnote-definition-label">2</sup>
+<p>The more traditional – and still sometimes more convenient –
+approach is to use “static shared memory,” using just the <code>__shared__</code>
+keyword without <code>extern</code>. Unfortunately, for historical reasons, static
+shared memory is subject to artificial capacity restrictions which dynamic
+shared memory is not.</p>
+</div>
+</main><footer><p><a href="https://mit.edu">Massachusetts Institute of Technology</a> —
+<a href="https://www.eecs.mit.edu">Department of Electrical Engineering and Computer Science</a> | <a href="https://accessibility.mit.edu">Accessibility</a></p>
+</footer></body></html>
