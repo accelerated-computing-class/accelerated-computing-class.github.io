@@ -400,7 +400,7 @@ asm volatile("mov.u64 %0, %%clock64;" : "=l"(end_time));
 <p>We’re deliberately ignoring the <code>y</code> and <code>z</code> dimensions of CUDA’s <a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#thread-hierarchy">3D parallelism</a> in this lab, because 3D parallelism is essentially just a thin layer of user-interface convenience over what is fundamentally a <em>linear</em> index space.</p>
 </div>
 <div class="footnote-definition" id="4"><sup class="footnote-definition-label">5</sup>
-<p>For more reading, you can refer to the original <a href="https://dl.acm.org/doi/pdf/10.1145/1498765.1498785">roofline article</a> from Patterson et al.</p>
+<p>For more reading, you can refer to the original <a href="https://dl.acm.org/doi/pdf/10.1145/1498765.1498785">roofline article</a> from Williams et al.</p>
 </div>
 </main><footer><p><a href="https://mit.edu">Massachusetts Institute of Technology</a> —
 <a href="https://www.eecs.mit.edu">Department of Electrical Engineering and Computer Science</a> | <a href="https://accessibility.mit.edu">Accessibility</a></p>
