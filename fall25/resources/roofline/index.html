@@ -1,0 +1,201 @@
+<!DOCTYPE html><html lang="en-us"><head><meta charset="utf-8"><title>6.S894</title><base href="/fall25/resources/roofline/"><meta content="width=device-width, initial-scale=1" name="viewport"><style>@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall25/assets/font/tex-gyre-heros/texgyreheros-regular.otf") format("opentype");
+    font-weight: regular;
+    font-style: regular;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall25/assets/font/tex-gyre-heros/texgyreheros-bold.otf") format("opentype");
+    font-weight: bold;
+    font-style: regular;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall25/assets/font/tex-gyre-heros/texgyreheros-italic.otf") format("opentype");
+    font-weight: regular;
+    font-style: italic;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall25/assets/font/tex-gyre-heros/texgyreheros-bolditalic.otf") format("opentype");
+    font-weight: bold;
+    font-style: italic;
+}</style><link href="/fall25/assets/main.css" rel="stylesheet"><link crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css" integrity="sha384-wcIxkf4k558AjM3Yz3BBFQUbk/zgIYC2R0QpeeYb+TwlBVMrlgLqwRjRtGZiK7ww" rel="stylesheet"><link href="/fall25/assets/favicon.png" rel="icon" type="image/png"></head><body><header><nav><h1><a href="/fall25/">6.S894</a></h1>
+<p><a href="/fall25/calendar">Calendar</a></p>
+<p><a href="/fall25/labs">Labs</a></p>
+<p><a href="/fall25/lectures">Lectures</a></p>
+<p><a href="/fall25/syllabus">Syllabus</a></p>
+<p><a href="/fall25/resources">Resources</a></p>
+<p><a href="/fall25/contact">Contact</a></p>
+<p><a href="/fall25/piazza">Piazza</a></p>
+</nav></header><main><h1>Understanding the Roofline Model</h1>
+<h2>When Should We Stop Optimizing?</h2>
+<p>Across several <a href="../../labs/">labs</a> in the semester, we have systematically optimized
+a number of different types of workloads . While this approach has taught us <em>how</em> to apply
+optimizations effectively, it raises a natural question: <strong>when is it time to
+stop</strong>? How do we know we’ve reached the point where further optimization won’t
+yield meaningful performance gains?</p>
+<p>Clearly, if we have achieved the <em>best possible performance</em> for our
+application, we should stop optimizing! To decide when to stop, then, we need an
+estimate of the best possible performance an application can reach.</p>
+<p>At first, the answer might seem messy and complicated. Modern processors use
+instruction-level parallelism, multi-level caching, and out-of-order execution
+to keep pipelines busy. With these layers of complexity, it can be difficult to
+identify a single number that meaningfully represents the maximum performance an
+application can achieve. It seems like a chicken-and-egg problem: how can
+you know the limit without first reaching it?</p>
+<p>Fortunately, there is an straightforward upper bound that applies to <em>all</em>
+applications: <strong>the performance of any application is capped by the peak
+performance of the hardware it runs on</strong>. The Roofline Model formalizes this
+intuition, providing a clear framework for reasoning about the upper limits of
+performance.</p>
+<h2>Roofline Model</h2>
+<p>The <strong>Roofline Model</strong> helps us define the <em>best possible</em> performance that can
+be achieved on particular hardware. In this model, performance is expressed in
+terms of <strong>throughput</strong>.</p>
+<div class="theme-box">
+<p><strong>Throughput</strong> is the rate at which a processor executes operations, typically
+measured as the number of floating-point operations completed per second
+(FLOPs/sec).</p>
+</div>
+<p>To determine when to stop optimizing, we need to quantify the maximum possible
+throughput for our application. In other words, we need to quantify the <em>maximum number of
+floating point operations that can be performed per second</em>. Intuitively, this
+quantity is a function of two facts:</p>
+<ol>
+<li>The rate at which data can be fetched (measured in byte/sec), also known as the <strong>memory bandwitdh</strong>, as discussed in lecture.</li>
+<li>The number of floating-point operations performed per byte of data (measured
+in FLOPs/byte), also known as the <strong>operational intensity</strong> of the workload, as defined below.</li>
+</ol>
+<div class="theme-box">
+<p><strong>Operational Intensity</strong> is the ratio of the total number of floating-point
+operations performed to the total amount of data transferred.</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>Operational Intensity</mtext><mo>=</mo><mfrac><mtext>Number of Floating-Point Operations (FLOPs)</mtext><mtext>Amount of Data Moved (bytes)</mtext></mfrac></mrow><annotation encoding="application/x-tex"> 
+\text{Operational Intensity} = \frac{\text{Number of Floating-Point
+Operations (FLOPs)}}{\text{Amount of Data Moved (bytes)}}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord text"><span class="mord">Operational Intensity</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.363em;vertical-align:-0.936em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.427em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord text"><span class="mord">Amount of Data Moved (bytes)</span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord text"><span class="mord">Number of Floating-Point Operations (FLOPs)</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.936em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
+</div>
+<p>Intuitively, multiplying the operational intensity and the memory bandwidth gives us the throughput of the system. As the
+number of floating-point operations performed per unit of data increases — or,
+as the operational intensity rises — the maximum achievable throughput increases too.</p>
+<p>Let’s make this concrete using our GPU, the RTX 4000 Ada. As we’ve seen from
+<a href="../../lectures/slides/Lecture3.pdf">lecture</a>, it has a global memory bandwidth of
+360 GB/sec. If we plot throughput against increasing operational intensity under
+this bandwidth, the maximum achievable throughput rises linearly with
+intensity.</p>
+<p><img src="images/dram_bandwidth_only.svg" alt="Bandwidth Only Roofline" /></p>
+<p>Of course, memory is only part of the picture. No processor can perform an
+unlimited number of operations per second, even if the worload has an infinite
+operational intensity. Our GPU also has a built-in cap on the total number of
+operations it can execute per second. This hardware-imposed ceiling is known as
+the <em>peak throughput</em> of the GPU.</p>
+<div class="theme-box">
+<p><strong>Peak throughput</strong> is the theoretical upper bound on a processor’s
+computational rate, assuming all execution units are fully utilized with no
+stalls or bottlenecks.</p>
+</div>
+<p>A quick
+<a href="https://www.techpowerup.com/gpu-specs/rtx-4000-ada-generation.c4171">search</a>
+about the RTX 4000 Ada gives us the following peak throughput numbers:</p>
+<div align="center">
+<div class="table-container"><table><thead><tr><th>Datatype</th><th>Peak Throughput</th></tr></thead><tbody>
+<tr><td>FP16 (half)</td><td>26.73 TFlops/sec</td></tr>
+<tr><td>FP32 (float)</td><td>26.73 TFlops/sec</td></tr>
+<tr><td>FP64 (double)</td><td>417.6 GFlops/sec</td></tr>
+</tbody></table>
+</div></div>
+<p>That is, the RTX Ada 4000 can perform a maximum of
+26,730,000,000,000 FP32 operations per second.</p>
+<div class="grey-box">
+<p><strong>Aside:</strong>
+Peak throughput numbers are often reported using the fused multiply-add (FMA)
+instruction. Even though it’s a single instruction, it counts as two
+floating-point operations: one multiplication and one addition.</p>
+</div>
+<p>Given the hard computational limit imposed by peak throughput, we now have a
+clear upper bound on the maximum performance our GPU can deliver. No matter how
+much we increase operational intensity, throughput cannot exceed this ceiling.
+Together, memory bandwidth and peak throughput define the two fundamental limits
+of performance on our machine, and the Roofline Model captures both in a single
+picture.</p>
+<p><img src="images/dram_roofline.svg" alt="DRAM Roofine" /></p>
+<p>The curve formed by combining the bandwidth limit and the peak throughput
+resembles the outline of a roof — hence the name.</p>
+<p>Although we have focused on global memory bandwidth, the roofline can also be
+drawn for data residing in L1 or L2 cache. In that case, the operational
+intensity required to reach the compute-bound regime is lower than when
+accessing data from global memory.</p>
+<p><img src="images/all_roofline.svg" alt="L1 and L2 roofilne" /></p>
+<div class="theme-box">
+<p><strong>Key Concept:</strong>
+Each machine has its own roofline plot. The plot, which is determined by the
+peak bandwidth and peak FLOPs/s that the machine can perform, <em>does not</em> change
+as applications change. However, where your application lands on that plot depends
+on the operational intensity of the application itself.</p>
+</div>
+<h3>Compute-Bound and Memory-Bound Regimes</h3>
+<p>One useful application of the Roofline model is that it classifies workloads as either memory-bound or compute-bound:</p>
+<p><img src="images/roofline_regimes.svg" alt="Roofline Regime" /></p>
+<ul>
+<li><strong>Memory-bound workloads</strong> are limited by data movement rather than
+computational capacity.</li>
+<li><strong>Compute-bound workloads</strong> are constrained by the processing power of the
+hardware.</li>
+</ul>
+<p>This classification helps direct optimization efforts towards the
+dominant bottleneck — either improving data locality and bandwidth utilization or
+enhancing computational efficiency.</p>
+<h2>Locating Applications on the Roofline Curve</h2>
+<p>To build intuition for how the roofline curve works, let’s look at a few simple
+kernels and see where they fall on the model. <em>From the plot, notice that
+determining an application’s maximum achievable throughput only requires
+computing its operational intensity.</em></p>
+<h3>Adding Two Arrays Element-wise</h3>
+<p>Consider a kernel that reads two arrays and writes their sum into a third array. For arrays of size
+<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi></mrow><annotation encoding="application/x-tex">n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span></span></span></span>, the operational intensity is:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mfrac><mrow><mi>n</mi><mtext> FLOPs</mtext></mrow><mrow><mn>3</mn><mo>×</mo><mi>n</mi><mo>×</mo><mn>4</mn><mtext> Bytes</mtext></mrow></mfrac><mo>=</mo><mn>0.083</mn><mtext> FLOPs/Byte</mtext></mrow><annotation encoding="application/x-tex">
+\frac{n \text{ FLOPs}}{3 \times n \times 4 \text{ Bytes}} = 0.083 \text{ FLOPs/Byte}
+</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:2.2408em;vertical-align:-0.8804em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3603em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">3</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord">4</span><span class="mord text"><span class="mord"> Bytes</span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord mathnormal">n</span><span class="mord text"><span class="mord"> FLOPs</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.8804em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord">0.083</span><span class="mord text"><span class="mord"> FLOPs/Byte</span></span></span></span></span></span></p>
+<h3>Matrix-Vector Multiplication</h3>
+<p>Matrix-vector multiplication involves multiplying an <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>×</mo><mi>n</mi></mrow><annotation encoding="application/x-tex">n \times n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span></span></span></span> matrix <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi></mrow><annotation encoding="application/x-tex">A</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">A</span></span></span></span> by
+a vector <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi></mrow><annotation encoding="application/x-tex">x</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">x</span></span></span></span> of length <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi></mrow><annotation encoding="application/x-tex">n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span></span></span></span> to produce a vector <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi></mrow><annotation encoding="application/x-tex">y</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span></span></span></span> of length <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi></mrow><annotation encoding="application/x-tex">n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span></span></span></span>:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>y</mi><mo>=</mo><mi>A</mi><mi>x</mi></mrow><annotation encoding="application/x-tex"> y = A x </annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em;"></span><span class="mord mathnormal" style="margin-right:0.03588em;">y</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">A</span><span class="mord mathnormal">x</span></span></span></span></span></p>
+<p>For this operation, we perform <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>2</mn><msup><mi>n</mi><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">2n^2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord">2</span><span class="mord"><span class="mord mathnormal">n</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span></span></span></span> floating-point operations (each row of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi></mrow><annotation encoding="application/x-tex">A</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">A</span></span></span></span>
+requires <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi></mrow><annotation encoding="application/x-tex">n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em;"></span><span class="mord mathnormal">n</span></span></span></span> multiplies and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>−</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">n-1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span> adds, which equals <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>2</mn><mi>n</mi><mo>−</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">2n-1</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">2</span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">1</span></span></span></span> FLOPs per row, or
+approximately <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>2</mn><mi>n</mi></mrow><annotation encoding="application/x-tex">2n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">2</span><span class="mord mathnormal">n</span></span></span></span> FLOPs per row for simplicity) and transfer <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>n</mi><mn>2</mn></msup><mo>×</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">n^2 \times 4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8974em;vertical-align:-0.0833em;"></span><span class="mord"><span class="mord mathnormal">n</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span>
+bytes for the matrix and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>2</mn><mi>n</mi><mo>×</mo><mn>4</mn></mrow><annotation encoding="application/x-tex">2n \times 4</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">2</span><span class="mord mathnormal">n</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6444em;"></span><span class="mord">4</span></span></span></span> bytes for the input and output vectors.
+The operational intensity is:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mfrac><mrow><mn>2</mn><msup><mi>n</mi><mn>2</mn></msup><mtext> FLOPs</mtext></mrow><mrow><mo stretchy="false">(</mo><msup><mi>n</mi><mn>2</mn></msup><mo>+</mo><mn>2</mn><mi>n</mi><mo stretchy="false">)</mo><mo>×</mo><mn>4</mn><mtext> Bytes</mtext></mrow></mfrac><mo>≈</mo><mfrac><mn>1</mn><mn>2</mn></mfrac><mtext> FLOPs/Byte for large </mtext><mi>n</mi></mrow><annotation encoding="application/x-tex"> \frac{2n^2 \text{ FLOPs}}{(n^2 + 2n) \times 4\text{ Bytes}} \approx \frac{1}{2} \text{ FLOPs/Byte for large } n </annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:2.4271em;vertical-align:-0.936em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.4911em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">n</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.7401em;"><span style="top:-2.989em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord">2</span><span class="mord mathnormal">n</span><span class="mclose">)</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord">4</span><span class="mord text"><span class="mord"> Bytes</span></span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">2</span><span class="mord"><span class="mord mathnormal">n</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mord text"><span class="mord"> FLOPs</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.936em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.0074em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">2</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span><span class="mord text"><span class="mord"> FLOPs/Byte for large </span></span><span class="mord mathnormal">n</span></span></span></span></span></p>
+<p>We can visualize these applications on our roofline now:</p>
+<p><img src="images/application_points.svg" alt="Application Points" /></p>
+<div class="grey-box">
+<p><strong>Aside</strong>: The Roofline Model is an <strong>idealized</strong> model of the machine, and it
+is not always possible to reach peak throughput for an application.</p>
+<p>The Roofline Model represents an upper bound on the performance an application
+can achieve. For many applications, especially those with unpredictable memory
+access patterns or complex control flow, it is not a
+<em>tight</em> upper bound. Determining a more realistic performance ceiling for these
+workloads is challenging and remains an active area of research.</p>
+</div>
+<h2>Microbenchmarking</h2>
+<ul>
+<li>Try to recreate the roofline for our machine. At what operational intensity do
+you empirically observe the cutoff point where the workload transitions from
+memory-bound to compute-bound?</li>
+</ul>
+<h2>Further Reading</h2>
+<p>If you’d like to explore these concepts further, here are a few recommended resources:</p>
+<ul>
+<li><strong>Roofline Model</strong>: The <a href="https://dl.acm.org/doi/pdf/10.1145/1498765.1498785">original paper</a> by Williams et al.
+(2009).</li>
+<li><strong>Amdahl’s Law</strong>: Presents a model for understanding the theoretical limits of
+parallel program speedup, highlighting why some workloads cannot be fully
+accelerated by adding more cores.</li>
+<li><strong>Little’s Law</strong>: Presents a model for relating the average number of tasks in
+a system, their arrival rate, and the time they spend in the system, providing
+insight into performance and throughput bottlenecks.</li>
+</ul>
+</main><footer><p><a href="https://mit.edu">Massachusetts Institute of Technology</a> —
+<a href="https://www.eecs.mit.edu">Department of Electrical Engineering and Computer Science</a> | <a href="https://accessibility.mit.edu">Accessibility</a></p>
+</footer></body></html>
