@@ -79,6 +79,7 @@
 </li>
 </ol>
 <h2>Part 0: Prelab – Roofline</h2>
+
 <p>In previous prelabs, we have benchmarked the latency of both arithmetic and memory instructions to determine the relative latency of operations, which provide an insight into the internal operations of the hardware we are using. In this prelab, we’ll take a higher level view of the same idea by diving deeper into the Roofline Model, which provides a simple model for performance engineering.</p>
 <blockquote>
 <p><strong>Deliverable:</strong> Read the explanation of the <a href="/fall25/resources/roofline"><strong>Roofline Model</strong></a>, and answer the two prelab questions below.</p>
@@ -143,29 +144,26 @@
 <ul>
 <li>
 <p><strong>Total fused multiply-add (FMA) throughput:</strong> <br></p>
-<pre><code>  (32 lanes / warp scheduler / cycle)
+<pre><span class="highlight-text highlight-plain">  (32 lanes / warp scheduler / cycle)
 * (2 FLOP / lane)
 * (4 warp schedulers / SM)
 * (48 SMs)
 * (2.175 GHz)
 
 = 26.7 TFLOP/sec
-</code></pre>
-</li>
+</span></pre></li>
 <li>
 <p><strong>Total DRAM bandwidth:</strong> <br></p>
-<pre><code>360 GB/sec
-</code></pre>
-</li>
+<pre><span class="highlight-text highlight-plain">360 GB/sec
+</span></pre></li>
 <li>
 <p><strong>Total L2 bandwidth:</strong> <br></p>
-<pre><code>2.4 TB/sec
-</code></pre>
-</li>
+<pre><span class="highlight-text highlight-plain">2.4 TB/sec
+</span></pre></li>
 </ul>
 <!--
 * **Total SM-level SRAM bandwidth:** <br>
-    ```
+    ```txt
       (32 lanes / SM / cycle)
     * (4 bytes / lane)
     * (48 SMs)
@@ -222,13 +220,13 @@ This is more similar to how the L1 cache works on a CPU, in which the cache <str
 <p><strong>Question 3 for final write-up:</strong> Imagine that every load of <code>a[i, k]</code> or <code>b[k, j]</code> could somehow load <strong>directly from L1</strong>. Then if L1 bandwidth were the only constraint, what is the fastest our workload could possibly run?</p>
 </blockquote>
 <p>For reference, the <strong>aggregate L1 bandwidth</strong> across the whole machine is given by: <br></p>
-<pre><code>  (32 lanes / SM / cycle)
+<pre><span class="highlight-text highlight-plain">  (32 lanes / SM / cycle)
 * (4 bytes / lane)
 * (48 SMs)
 * (2.175 GHz)
 
 = 13.4 TB/sec
-</code></pre>
+</span></pre>
 <h3>Implementation</h3>
 <p>For our second and final kernel in this lab, we’ll be aiming for a much more ambitious run time target than in the previous section: <strong>8 ms or less</strong> on our large-scale benchmark. If you’ve already answered Question 3, you might notice that in order to hit this 8 ms target, we’re going to need to load the operands for our FMAs from some memory resource which is <strong>faster than L1</strong>. But what’s faster than L1? There’s only one such resource: <strong>registers!</strong></p>
 <p>In the same way that in Part 2 we amortized the cost of loads from L2 and DRAM by reusing data in L1, in this kernel we’ll need to amortize the cost of loading from L1 by reusing data in registers.</p>
