@@ -127,7 +127,7 @@
 <p><strong>Deliverable:</strong> The GPU provides an <code>FFMA</code> instruction to perform fused multiply-add operations on floating-point values.
 To measure the latency of the <code>FFMA</code> instruction, write code in the <code>measure_fma_latency(..)</code> that produces an <code>FFMA</code> instruction during compilation.</p>
 </blockquote>
-<!-- ```C++
+<!-- ```c++
 // Measure latency of a single FMA by reading the GPU clock.
 asm volatile("mov.u64 %0, %%clock64;" : "=l"(start_time));
 
@@ -137,12 +137,12 @@ asm volatile("mov.u64 %0, %%clock64;" : "=l"(start_time));
 asm volatile("mov.u64 %0, %%clock64;" : "=l"(end_time));
 ``` -->
 <p>You can use the <code>-s</code> flag with telerun to verify your code generates an <code>FFMA</code> instruction in the SASS output. Here’s an example <code>FFMA</code> instruction:</p>
-<pre><code>/*0050*/                   FFMA.FTZ R0, R0, R0, R0 ;     /* 0x0000000000007223 */
-                                                         /* 0x004fc80000010000 */
-</code></pre>
+<pre><span class="highlight-source highlight-c++"><span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span>0050<span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span>                   FFMA<span class="highlight-punctuation highlight-accessor highlight-dot highlight-c++">.</span><span class="highlight-variable highlight-other highlight-readwrite highlight-member highlight-c++">FTZ</span> R0<span class="highlight-punctuation highlight-separator highlight-c++">,</span> R0<span class="highlight-punctuation highlight-separator highlight-c++">,</span> R0<span class="highlight-punctuation highlight-separator highlight-c++">,</span> R0 <span class="highlight-punctuation highlight-terminator highlight-c++">;</span>     <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> 0x0000000000007223 <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span>
+                                                         <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> 0x004fc80000010000 <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span>
+</span></pre>
 <p>Running <code>fma_latency.cu</code> should print the latency of the instruction <code>FFMA</code> in cycles.</p>
-<pre><code>    Latency of measure_fma_latency code snippet = &lt;REPORTED&gt; cycles 
-</code></pre>
+<pre><span class="highlight-text highlight-plain">    Latency of measure_fma_latency code snippet = &lt;REPORTED&gt; cycles 
+</span></pre>
 <p><strong>Helpful Tip:</strong>  To make the timing more stable, chain dependent FMA instructions so the compiler cannot reorder them. Finally, divide the total execution time by the number of operations to compute the average latency per instruction.</p>
 <blockquote>
 <p><strong>Prelab Question 1:</strong> What is the latency of an <code>FFMA</code> instruction?</p>
@@ -190,7 +190,7 @@ asm volatile("mov.u64 %0, %%clock64;" : "=l"(end_time));
 \text{\# Warps} = \frac{\text{\# Blocks} \times \text{\# Lanes per Block}}{32}
 </annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord text"><span class="mord"># Warps</span></span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.0574em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3714em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">32</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord text"><span class="mord"># Blocks</span></span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mord text"><span class="mord"># Lanes per Block</span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></p>
 <p>The starter code provided in <code>warp_scheduler.cu</code> runs our kernel under different configurations to see how much of our machine’s peak throughput it achieves. In particular, across different runs, <code>warp_scheduler.cu</code> will launch the kernel while varying the numbers of warps. Importantly, the amount of work performed by each warp and each lane inside the warp will remain <em>exactly</em> the same across these runs. Running the file should produce output as follows:</p>
-<pre><code>    # Warps,    # FLOPS
+<pre><span class="highlight-text highlight-plain">    # Warps,    # FLOPS
     96,         3.48436e+12
     192,        6.92671e+12
     288,        1.04813e+13
@@ -201,7 +201,7 @@ asm volatile("mov.u64 %0, %%clock64;" : "=l"(end_time));
     768,        2.64575e+13
     864,        1.59401e+13
     960,        1.77052e+13
-</code></pre>
+</span></pre>
 <p>To plot this data, we provide a minimal script that you can run using the following command:</p>
 <pre><span class="highlight-source highlight-shell highlight-bash"><span class="highlight-meta highlight-function-call highlight-shell"><span class="highlight-variable highlight-function highlight-shell">python3</span></span><span class="highlight-meta highlight-function-call highlight-arguments highlight-shell"> plot.py <span class="highlight-keyword highlight-operator highlight-assignment highlight-redirection highlight-shell">&lt;</span> <span class="highlight-keyword highlight-operator highlight-assignment highlight-redirection highlight-shell">&lt;</span>telerun-out<span class="highlight-keyword highlight-operator highlight-assignment highlight-redirection highlight-shell">&gt;</span>/<span class="highlight-keyword highlight-operator highlight-assignment highlight-redirection highlight-shell">&lt;</span>job-id<span class="highlight-keyword highlight-operator highlight-assignment highlight-redirection highlight-shell">&gt;</span>/execute-log.txt</span>
 </span></pre>
@@ -303,8 +303,8 @@ asm volatile("mov.u64 %0, %%clock64;" : "=l"(end_time));
 <h3>Implementation: GPU Multi-Core</h3>
 <p>By direct analogy to running one (vector-parallel) thread on each of the 8 cores of the CPU, on the GPU our goal for this section is to run one <strong>warp</strong> on each of the GPU’s <strong>192 warp schedulers</strong>.</p>
 <p>Conceptually, what we want to do is to launch our kernel with <code>192 * 32 = 6144</code> CUDA threads, and have each group of 32 of those CUDA threads run on a separate warp scheduler. However, we can’t just launch our kernel with launch parameters</p>
-<pre><code>&lt;&lt;&lt;1, 6144&gt;&gt;&gt;
-</code></pre>
+<pre><span class="highlight-text highlight-plain">&lt;&lt;&lt;1, 6144&gt;&gt;&gt;
+</span></pre>
 <p>because CUDA uses a <strong>two-level hierarchy of software parallelism</strong> which corresponds roughly to the two-level  hierarchy of SMs and warp schedulers which is present in the hardware. Specifically:</p>
 <ol>
 <li>
