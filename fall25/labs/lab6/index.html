@@ -1,0 +1,309 @@
+<!DOCTYPE html><html lang="en-us"><head><meta charset="utf-8"><title>6.S894</title><base href="/fall25/labs/lab6/"><meta content="width=device-width, initial-scale=1" name="viewport"><style>@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall25/assets/font/tex-gyre-heros/texgyreheros-regular.otf") format("opentype");
+    font-weight: regular;
+    font-style: regular;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall25/assets/font/tex-gyre-heros/texgyreheros-bold.otf") format("opentype");
+    font-weight: bold;
+    font-style: regular;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall25/assets/font/tex-gyre-heros/texgyreheros-italic.otf") format("opentype");
+    font-weight: regular;
+    font-style: italic;
+}
+@font-face {
+    font-family: "Tex Gyre Heros";
+    src: url("/fall25/assets/font/tex-gyre-heros/texgyreheros-bolditalic.otf") format("opentype");
+    font-weight: bold;
+    font-style: italic;
+}</style><link href="/fall25/assets/main.css" rel="stylesheet"><link crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css" integrity="sha384-wcIxkf4k558AjM3Yz3BBFQUbk/zgIYC2R0QpeeYb+TwlBVMrlgLqwRjRtGZiK7ww" rel="stylesheet"><link href="/fall25/assets/favicon.png" rel="icon" type="image/png"></head><body><header><nav><h1><a href="/fall25/">6.S894</a></h1>
+<p><a href="/fall25/calendar">Calendar</a></p>
+<p><a href="/fall25/labs">Labs</a></p>
+<p><a href="/fall25/lectures">Lectures</a></p>
+<p><a href="/fall25/syllabus">Syllabus</a></p>
+<p><a href="/fall25/resources">Resources</a></p>
+<p><a href="/fall25/contact">Contact</a></p>
+<p><a href="/fall25/piazza">Piazza</a></p>
+</nav></header><main><h1>Lab 6: Matrix Multiply – Tensor Cores</h1>
+<h2>Prologue: Logistics</h2>
+<h3>Due Dates</h3>
+<p>For this lab, you’ll be turning in the following deliverables:</p>
+<ul>
+<li>
+<p><strong>Checkpoint:</strong> Due Tuesday, October 14, 11:59pm. For this checkpoint, submit your responses to the prelab (Part 0), and tell us how you’re doing in optimizing your implementation for the main lab.</p>
+</li>
+<li>
+<p><strong>Final Submission:</strong> Due Friday, October 17, 11:59pm. Submit your completed code for <code>matmul_3.cu</code>, as well as a write-up containing your answers to Questions 1 - 2.</p>
+</li>
+</ul>
+<h3>Starter Code</h3>
+<p>You can get the starter code for this lab by cloning the <a href="https://github.com/accelerated-computing-class/lab6">lab repository</a>:</p>
+<pre><span class="highlight-source highlight-shell highlight-bash"><span class="highlight-meta highlight-function-call highlight-shell"><span class="highlight-variable highlight-function highlight-shell">git</span></span><span class="highlight-meta highlight-function-call highlight-arguments highlight-shell"> clone git@github.com:accelerated-computing-class/lab6.git</span>
+</span></pre>
+<h2>Introduction</h2>
+<h3>Goals for This Lab</h3>
+<p>So far in our exploration of matrix multiplication, we’ve focused primarily on optimizing <strong>data movement</strong> (<a href="/fall25/labs/lab4">Lab 4</a>) and <strong>work partitioning</strong> (<a href="/fall25/labs/lab5">Lab 5</a>). As we’ve worked to reduce bottlenecks along those dimensions, the run times of our implementations have increasingly become dominated by the cost of the <strong>floating point computations</strong> in our kernels’ innermost loops. Up until now, we’ve been implementing those core floating point computations using <a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#floating-point-instructions-fma"><strong>fused multiply-add (FMA)</strong></a> instructions. However, we can do better: modern NVIDIA GPUs support so-called <a href="https://www.nvidia.com/en-us/data-center/tensor-cores/">“<strong>tensor core</strong>”</a> instructions, which are designed specifically to accelerate matrix multiplication workloads. In this third and final matrix multiplication lab, we’ll be looking at how to use those tensor core instructions to speed up our kernels.</p>
+<p>The tensor core instructions we’ll be using in this lab aren’t exposed by default in the CUDA C++ language, so we’ll be accessing them via <a href="https://docs.nvidia.com/cuda/inline-ptx-assembly/index.html"><strong>inline PTX assembly</strong></a>, as you’ve done before in this class.<sup class="footnote-reference"><a href="#cutlass">1</a></sup></p>
+<ol>
+<li>
+<p>In the prelab, we’ll look at how to access <strong>tensor core instructions</strong> in PTX, and how to work with the <strong>data layouts</strong> those tensor core instructions expect.</p>
+</li>
+<li>
+<p>Then, we’ll integrate tensor core instructions into our <strong>full matrix multiplication kernel</strong>, and try to obtain a speedup over what were able to achieve using FMAs.</p>
+</li>
+</ol>
+<h3>Note on Terminology: What is a “Tensor Core?”</h3>
+<p>Although the phrase “tensor core” might conjure up mental images of something similar to a “CPU core” – perhaps something with its own register file and program counter, decoding and executing a programmable stream of instructions in sequence – a tensor core is <strong>not</strong> actually that kind of “core” in the traditional computer architecture sense.</p>
+<p>The phrase “tensor core” is just NVIDIA’s name for a particular kind of <strong>functional unit</strong> which exists on recent generations of NVIDIA GPUs. Tensor cores are not fundamentally different from ALUs or FPUs – each tensor core is attached to a warp scheduler, and solely executes math operations.</p>
+<p><img src="images/tensor_core_schematic.svg" alt="" /></p>
+<p>From a software point of view, tensor cores simply provide <strong>another kind of math instruction</strong> which your code is able to invoke. As we’ll see, these tensor core instructions have some interesting and unusual properties, but their existence doesn’t radically alter anything about the CUDA programming model.</p>
+
+<h2>Part 0: Prelab – Invoking Tensor Core Instructions</h2>
+<p>First, let’s start by using our background in inline PTX to use it to interact with the tensor cores on our GPU!</p>
+<p>The RTX 4000 Ada GPU we’re using belongs to NVIDIA’s <a href="https://en.wikipedia.org/wiki/Ada_Lovelace_(microarchitecture)">Ada Lovelace</a> generation (specifically, “Compute Capability 8.9”). On Ada, there are tensor core instructions available in four different floating-point flavors:</p>
+<ul>
+<li>
+<p><a href="https://en.wikipedia.org/wiki/Half-precision_floating-point_format"><strong><code>f16</code></strong></a> – The 16-bit floating point format <a href="https://en.wikipedia.org/wiki/IEEE_754">defined by the IEEE 754 standard</a>, with 5 exponent bits and 10 mantissa bits.</p>
+</li>
+<li>
+<p><a href="https://en.wikipedia.org/wiki/Bfloat16_floating-point_format"><strong><code>bf16</code></strong></a> – “<a href="https://en.wikipedia.org/wiki/Google_Brain">Brain</a> float 16,” with 8 exponent bits and 7 mantissa bits. Popular in deep learning.</p>
+</li>
+<li>
+<p><a href="https://blogs.nvidia.com/blog/tensorfloat-32-precision-format/"><strong><code>tf32</code></strong></a> – “TensorFloat-32,” which is basically ordinary <a href="https://en.wikipedia.org/wiki/Single-precision_floating-point_format">32-bit floating point</a>, but with compromises made in the accuracy of the multiplications performed by the tensor core. The mantissa of each input value is implicitly truncated to 10 bits (down from the ordinary 23) before participating in the multiplication.</p>
+</li>
+<li>
+<p><a href="https://developer.nvidia.com/blog/floating-point-8-an-introduction-to-efficient-lower-precision-ai-training/"><strong><code>e4m3</code>, <code>e5m2</code></strong></a> – 8-bit floating point, which is configurable to either use 4 or 5 exponent bits (<code>e4m3</code> vs. <code>e5m2</code>), which was added in the Hopper/Ada generations.</p>
+</li>
+</ul>
+<p>Additionally, for all four of these formats, tensor cores support <strong>accumulating</strong> results in full 32-bit precision, effectively casting the results of the tensor core’s lower-precision multiplications up to FP32 before adding them together or to an existing partial sum.</p>
+<p>Because the kernels we developed in Lab 4 and Lab 5 work in 32-bit precision, we’ll be focusing on <strong>TF32</strong> precision in this lab for the sake of compatibility with our existing code. Given that TF32 tensor core instructions perform multiplications in lower precision than the FP32 FMAs we’ve been using until now, we can expect to see some unavoidable accuracy loss when we adapt our kernel to use tensor cores.</p>
+<p>So – what kind of TF32-precision tensor core functionality do we actually have on our 4000 Ada GPU? The answer is simple – we have exactly two instructions:<sup class="footnote-reference"><a href="#wmma">2</a></sup></p>
+<ul>
+<li><strong><code>mma.sync.aligned.m16n8k4.row.col.f32.tf32.tf32.f32</code></strong> (<code>HMMA.1684.F32.TF32</code> in SASS)</li>
+<li><strong><code>mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32</code></strong> (<code>HMMA.1688.F32.TF32</code> in SASS)</li>
+</ul>
+<p>(You can find the PTX documentation for these instructions here: <a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-instructions-mma">MMA PTX docs</a>.)</p>
+<p>Both of these instructions are “<strong>matrix-multiply-accumulate</strong>” (<strong>MMA</strong>) instructions; conceptually, they each implement an operation like:</p>
+<p><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>D</mi><mo>←</mo><mi>A</mi><mi>B</mi><mo>+</mo><mi>C</mi></mrow><annotation encoding="application/x-tex">D \leftarrow A B + C</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">D</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">←</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal">A</span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">C</span></span></span></span></span></p>
+<p>where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi></mrow><annotation encoding="application/x-tex">A</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">A</span></span></span></span>, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi></mrow><annotation encoding="application/x-tex">B</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span></span></span></span>, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi></mrow><annotation encoding="application/x-tex">C</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">C</span></span></span></span>, and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi></mrow><annotation encoding="application/x-tex">D</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">D</span></span></span></span> are matrices. The two instructions differ only in the dimensions of the matrices they operate on:</p>
+<div class="table-container"><table><thead><tr><th>Instruction Dimensions</th><th><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi></mrow><annotation encoding="application/x-tex">A</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">A</span></span></span></span> Dimensions</th><th><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi></mrow><annotation encoding="application/x-tex">B</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span></span></span></span> Dimensions</th><th><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi></mrow><annotation encoding="application/x-tex">C</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">C</span></span></span></span>, <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi></mrow><annotation encoding="application/x-tex">D</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">D</span></span></span></span> Dimensions</th></tr></thead><tbody>
+<tr><td><code>m16n8k4</code></td><td><code>16 * 4</code></td><td><code>4 * 8</code></td><td><code>16 * 8</code></td></tr>
+<tr><td><code>m16n8k8</code></td><td><code>16 * 8</code></td><td><code>8 * 8</code></td><td><code>16 * 8</code></td></tr>
+</tbody></table>
+</div>
+<p>Empirically, the course staff have observed that these instructions are equivalent in terms of FLOP throughput; the <code>m16n8k4</code> variant performs half as much work per instruction as <code>m16n8k8</code>, but twice as many <code>m16n8k4</code> instructions can execute per cycle on average as <code>m16n8k8</code>.</p>
+<p>In this part of the lab, we’ll look at how we can use the <strong><code>m16n8k8</code></strong> TF32 MMA instruction to execute a <strong>single <code>16 * 8 * 8</code> matrix multiplication</strong>. As we’ll see, this isn’t actually trivial – in particular, it will require understanding the unusual way in which tensor core instructions expect their operands to be laid out in registers.</p>
+<h3>Warp-Level Semantics</h3>
+<p>To understand how the <code>mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32</code> instruction works, the most important fact to establish is that tensor core instructions fundamentally operate <strong>at the warp level</strong>.</p>
+<p>As we saw in Labs 1 and 2, the GPU’s hardware always executes instructions in a 32-wide SIMD fashion, with every 32 consecutive CUDA threads grouped together as 32 lanes of a vector. Viewing the GPU as a SIMD machine, virtually all the instructions we’ve seen our GPU execute so far in this course have been <strong>element-wise vector operations</strong>, with each instruction applying an <strong>identical, independent</strong> operation in each lane (modulo masking). When every instruction we execute is element-wise, we can often get away with ignoring the fact that the GPU is a SIMD machine at all, and simply pretend like every CUDA thread its executing its own independent stream of instructions. However, tensor core instructions <strong>break this illusion</strong>, because they are <strong>not element-wise</strong>.<sup class="footnote-reference"><a href="#illusion">3</a></sup></p>
+<p>When a warp executes a tensor core operation like our <code>m16n8k8</code> instruction, it is not executing a separate, independent matrix multiplication for each CUDA thread in the warp; rather, it is executing a <strong>single <code>16 * 8 * 8</code> matrix multiplication</strong> cooperatively across the <strong>entire warp</strong>, with the input and output data for the instruction <strong>distributed</strong> across the registers of all the CUDA threads in the warp. When thinking about tensor core instructions, it’s most helpful to think of each “register” in your program as a <strong>32-word-wide vector register</strong>, rather than as a single scalar register per CUDA thread.</p>
+<p>With all of that in mind, let’s take a look at how the <code>m16n8k8</code> instruction we’re using actually expects data to be laid out in registers. First, a bit of math:</p>
+<ul>
+<li>The <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>A</mi></mrow><annotation encoding="application/x-tex">A</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal">A</span></span></span></span> matrix is <code>16 * 8</code> words, so we need <code>16 * 8 / 32 = 4</code> registers to store it.</li>
+<li>The <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi></mrow><annotation encoding="application/x-tex">B</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.05017em;">B</span></span></span></span> matrix is <code>8 * 8</code> words, so we need <code>8 * 8 / 32 = 2</code> registers to store it.</li>
+<li>The <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi></mrow><annotation encoding="application/x-tex">C</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">C</span></span></span></span>/<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>D</mi></mrow><annotation encoding="application/x-tex">D</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.02778em;">D</span></span></span></span> matrix is <code>16 * 8</code> words, so we need <code>16 * 8 / 32 = 4</code> registers to store it.</li>
+</ul>
+<p>Accordingly, the PTX syntax for invoking our tensor core instruction looks like this:</p>
+<pre><span class="highlight-source highlight-c++">mma<span class="highlight-punctuation highlight-accessor highlight-dot highlight-c++">.</span><span class="highlight-variable highlight-other highlight-readwrite highlight-member highlight-c++">sync</span><span class="highlight-punctuation highlight-accessor highlight-dot highlight-c++">.</span><span class="highlight-variable highlight-other highlight-readwrite highlight-member highlight-c++">aligned</span><span class="highlight-punctuation highlight-accessor highlight-dot highlight-c++">.</span><span class="highlight-variable highlight-other highlight-readwrite highlight-member highlight-c++">m16n8k8</span><span class="highlight-punctuation highlight-accessor highlight-dot highlight-c++">.</span><span class="highlight-variable highlight-other highlight-readwrite highlight-member highlight-c++">row</span><span class="highlight-punctuation highlight-accessor highlight-dot highlight-c++">.</span><span class="highlight-variable highlight-other highlight-readwrite highlight-member highlight-c++">col</span><span class="highlight-punctuation highlight-accessor highlight-dot highlight-c++">.</span><span class="highlight-variable highlight-other highlight-readwrite highlight-member highlight-c++">f32</span><span class="highlight-punctuation highlight-accessor highlight-dot highlight-c++">.</span><span class="highlight-variable highlight-other highlight-readwrite highlight-member highlight-c++">tf32</span><span class="highlight-punctuation highlight-accessor highlight-dot highlight-c++">.</span><span class="highlight-variable highlight-other highlight-readwrite highlight-member highlight-c++">tf32</span><span class="highlight-punctuation highlight-accessor highlight-dot highlight-c++">.</span><span class="highlight-variable highlight-other highlight-readwrite highlight-member highlight-c++">f32</span>
+    <span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-begin highlight-c++">{</span><span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">%</span><span class="highlight-constant highlight-numeric highlight-c++">0</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">%</span><span class="highlight-constant highlight-numeric highlight-c++">1</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">%</span><span class="highlight-constant highlight-numeric highlight-c++">2</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">%</span><span class="highlight-constant highlight-numeric highlight-c++">3</span><span class="highlight-punctuation highlight-section highlight-block highlight-end highlight-c++">}</span></span><span class="highlight-punctuation highlight-separator highlight-c++">,</span>     <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> &#39;D&#39; matrix <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span>
+    <span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-begin highlight-c++">{</span><span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">%</span><span class="highlight-constant highlight-numeric highlight-c++">4</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">%</span><span class="highlight-constant highlight-numeric highlight-c++">5</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">%</span><span class="highlight-constant highlight-numeric highlight-c++">6</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">%</span><span class="highlight-constant highlight-numeric highlight-c++">7</span><span class="highlight-punctuation highlight-section highlight-block highlight-end highlight-c++">}</span></span><span class="highlight-punctuation highlight-separator highlight-c++">,</span>     <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> &#39;A&#39; matrix <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span>
+    <span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-begin highlight-c++">{</span><span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">%</span><span class="highlight-constant highlight-numeric highlight-c++">8</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">%</span><span class="highlight-constant highlight-numeric highlight-c++">9</span><span class="highlight-punctuation highlight-section highlight-block highlight-end highlight-c++">}</span></span><span class="highlight-punctuation highlight-separator highlight-c++">,</span>             <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> &#39;B&#39; matrix <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span>
+    <span class="highlight-meta highlight-block highlight-c++"><span class="highlight-punctuation highlight-section highlight-block highlight-begin highlight-c++">{</span><span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">%</span><span class="highlight-constant highlight-numeric highlight-c++">10</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">%</span><span class="highlight-constant highlight-numeric highlight-c++">11</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">%</span><span class="highlight-constant highlight-numeric highlight-c++">12</span><span class="highlight-punctuation highlight-separator highlight-c++">,</span> <span class="highlight-keyword highlight-operator highlight-arithmetic highlight-c">%</span><span class="highlight-constant highlight-numeric highlight-c++">13</span><span class="highlight-punctuation highlight-section highlight-block highlight-end highlight-c++">}</span></span><span class="highlight-punctuation highlight-terminator highlight-c++">;</span> <span class="highlight-comment highlight-block highlight-c"><span class="highlight-punctuation highlight-definition highlight-comment highlight-c">/*</span> &#39;C&#39; matrix <span class="highlight-punctuation highlight-definition highlight-comment highlight-c">*/</span></span>
+</span></pre>
+<p>(PTX syntax supports <code>/* ... */</code> comments.)</p>
+<p>From the perspective of each CUDA thread, each of these <code>%0</code>, <code>%1</code>, etc operands is a <strong>1-word scalar register</strong>. Collectively across the entire warp, each operand is a <strong>32-word vector register</strong>.</p>
+<p>How does the <code>m16n8k8</code> instruction expect data to be packed into these registers? We present the layouts below.</p>
+<p><a href="images/tf32_16x8x8_a.png"><img src="images/tf32_16x8x8_a.png" alt="" /></a></p>
+<p><a href="images/tf32_16x8x8_b.png"><img src="images/tf32_16x8x8_b.png" alt="" /></a></p>
+<p><a href="images/tf32_16x8x8_c.png"><img src="images/tf32_16x8x8_c.png" alt="" /></a></p>
+<p>(These diagrams are courtesy of <a href="https://claude.ai/">Claude 3.5 Sonnet</a>. You can click any image to expand it. You can also access <strong>interactive</strong> versions of these diagrams here:</p>
+<ul>
+<li><a href="https://claude.site/artifacts/395b764a-dfdf-41c4-81ea-bd2a9776af5e"><strong>interactive ‘A’</strong></a></li>
+<li><a href="https://claude.site/artifacts/7c09e2c1-7381-46a3-a1e3-2151d5f34c58"><strong>interactive ‘B’</strong></a></li>
+<li><a href="https://claude.site/artifacts/ff994c5b-a8d7-4eec-b345-82ff73b59d17"><strong>interactive ‘C’</strong></a>
+)</li>
+</ul>
+<p>(The <a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-fragment-mma-1688">PTX documentation</a> also contains its own versions of these diagrams.)</p>
+<p>Essentially:</p>
+<ul>
+<li>
+<p>The ‘A’ matrix is split into 4 quadrants. Each quadrant is mapped to a separate register, first top-to-bottom then left-to-right. Within each quadrant, the data is laid out in the corresponding register in row-major order.</p>
+</li>
+<li>
+<p>The ‘B’ matrix is split vertically into 2 halves. Each half is mapped to a separate register, first top then bottom. Within each half, the data is laid out in the corresponding register in column-major order.</p>
+</li>
+<li>
+<p>The ‘C’ matrix (and ‘D’ matrix) is split vertically into 2 halves, and each half is sliced into alternating vertical stripes, with all the even stripes grouped together and all the odd stripes grouped together. Each stripe-set in each half is mapped to a separate register. Within each stripe-set, the data is laid out in the corresponding register in row-major order.</p>
+</li>
+</ul>
+<p>Recall that for the ‘A’ matrix, the “vertical” and “horizontal” dimensions correspond to the <code>i</code> and <code>k</code> indices in the matrix multiply computation, whereas for ‘B’ they correspond to the <code>k</code> and <code>j</code> indices, and for ‘C’ they correspond to <code>i</code> and <code>j</code>.</p>
+<h3>A Note on Register Types</h3>
+<p>You now have almost everything you need in order to invoke the <code>mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32</code> instruction to perform a <code>16 * 8 * 8</code> matrix-multiply-accumulate. There is, however, one remaining quirk of the PTX interface to be aware of: this PTX instruction expects every operand to be a 32-bit <strong>integer</strong> register. Of course, the bits these integer values carry will actually encode 32-bit floating-point data, but it expects them to be integer registers nonetheless. To cope with this, you can use the built-in <a href="https://docs.nvidia.com/cuda/cuda-math-api/cuda_math_api/group__CUDA__MATH__INTRINSIC__CAST.html#_CPPv415__float_as_uintf"><code>__float_as_uint</code></a> and <a href="https://docs.nvidia.com/cuda/cuda-math-api/cuda_math_api/group__CUDA__MATH__INTRINSIC__CAST.html#_CPPv415__uint_as_floatj"><code>__uint_as_float</code></a> functions to reinterpret the bits of a <code>float</code> as a <code>uint32_t</code>, and vice-versa. (These conversion functions are purely a compile-time formality and should ultimately have zero cost at run time.)</p>
+<h3>Implementation</h3>
+<blockquote>
+<p><strong>Deliverable:</strong> In the file <code>exercise_mma.cu</code>, implement the function <code>mma_16x8x8_kernel</code> to perform a single <code>16 * 8 * 8</code> matrix multiplication on the matrices stored in <code>a</code> and <code>b</code>, and accumulate the results of that matrix multiplication into <code>c</code>, using the tensor core instruction <code>mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32</code>. In addition to invoking this tensor core instruction, your kernel can use whatever additional CUDA logic you like to compute indices, move data around, etc. The data in <code>a</code>, <code>b</code>, and <code>c</code> is stored in row-major layout in global memory. Note that the kernel <code>mma_16x8x8_kernel</code> will be launched with exactly 32 CUDA threads (one warp).</p>
+</blockquote>
+<blockquote>
+<p><strong>Prelab Question:</strong> Look at the assembly code generated for your <code>exercise_mma.cu</code> file. What does the generated SASS look like? Can you find the tensor core instruction? Paste the relevant chunk of SASS in your answer.</p>
+</blockquote>
+<h2>Part 3: Accelerating Matrix Multiply</h2>
+<p>Now that we’ve seen how to invoke tensor core instructions on our GPU, we’re ready to integrate them into our full matrix multiply kernel!</p>
+<p>For this lab, we’ll be focusing on just a subset of the problem sizes from Lab 5. Here they are:</p>
+<div class="table-container"><table><thead><tr><th><code>size_i</code></th><th><code>size_j</code></th><th><code>size_k</code></th></tr></thead><tbody>
+<tr><td><code>3072</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code>2048</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code>1024</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code> 512</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code> 256</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code> 128</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code>  64</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code>  32</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+<tr><td><code>  16</code></td><td><code>3072</code></td><td><code>3072</code></td></tr>
+</tbody></table>
+</div>
+<h3>Analysis</h3>
+<p>To understand the maximum performance we can achieve with our tensor core implementation on each of these problem sizes, we can repeat a similar analysis to the one we carried out for the previous lab. For this analysis, you can assume that the theoretical peak TF32 tensor core throughput on our 4000 Ada GPU is given by:</p>
+<pre><span class="highlight-text highlight-plain">  (128 FLOP / tensor core / cycle)
+* (4 tensor cores / SM)
+* (48 SMs)
+* (2.175 GHz)
+
+= 53.45 TFLOP/s
+</span></pre>
+<blockquote>
+<p><strong>Question 1 for final write-up:</strong> For <strong>each of the problem sizes</strong> in this lab, walk through the following analysis (you may find it helpful to reuse some of your calculations from <a href="/fall25/labs/lab5">Lab 5</a> Question 2):</p>
+<ol>
+<li>
+<p>Considering the total number of FLOPs required to process this problem size, what is the fastest we could process this problem size if <strong>tensor core throughput</strong> were the only constraint?</p>
+</li>
+<li>
+<p>Considering (1) as well as the minimum time required to access each unique matrix element in DRAM, what <strong>lower bound</strong> does this imply for the run time of our algorithm? Is this workload compute-bound or bandwidth-bound?</p>
+</li>
+<li>
+<p>Considering (2), what is the <strong>maximum TFLOP/s</strong> we could achieve on this problem size? (This is just (2) divided by the total FLOPs.)</p>
+</li>
+<li>
+<p>How does (3) <strong>compare</strong> to the maximum throughput achievable if we were to use <strong>FMAs</strong> rather than tensor cores (as we calculated in Lab 5 Question 2.6)? Is the workload constrained by the same resource (either compute or bandwidth) in both cases, or is one scenario compute-bound while the other is bandwidth-bound?</p>
+</li>
+</ol>
+</blockquote>
+<h3>Implementation</h3>
+<p>Our goal for the final part of this lab will be to write a matrix multiply kernel which uses <strong>tensor cores</strong> to run <strong>faster than any FMA-based matrix multiply realistically could</strong> on our largest problem sizes.</p>
+<p>To calibrate our expectations for how fast an FMA-based kernel could realistically run, we’ve measured the performance of NVIDIA’s highly-optimized <a href="https://developer.nvidia.com/cublas">cuBLAS library</a> on each problem size <strong>when running without tensor cores</strong>:<sup class="footnote-reference"><a href="#cublas_fp32">4</a></sup></p>
+<p><strong>cuBLAS Performance Without Tensor Cores:</strong></p>
+<div class="table-container"><table><thead><tr><th><code>size_i</code></th><th><code>size_j</code></th><th><code>size_k</code></th><th>Time (ms)</th><th>Throughput (TFLOP/s)</th></tr></thead><tbody>
+<tr><td><code>3072</code></td><td><code>3072</code></td><td><code>3072</code></td><td><code>3.152</code></td><td><code>18.396</code></td></tr>
+<tr><td><code>2048</code></td><td><code>3072</code></td><td><code>3072</code></td><td><code>2.174</code></td><td><code>17.781</code></td></tr>
+<tr><td><code>1024</code></td><td><code>3072</code></td><td><code>3072</code></td><td><code>1.090</code></td><td><code>17.726</code></td></tr>
+<tr><td><code>512</code></td><td><code>3072</code></td><td><code>3072</code></td><td><code>0.559</code></td><td><code>17.295</code></td></tr>
+<tr><td><code>256</code></td><td><code>3072</code></td><td><code>3072</code></td><td><code>0.356</code></td><td><code>13.566</code></td></tr>
+<tr><td><code>128</code></td><td><code>3072</code></td><td><code>3072</code></td><td><code>0.256</code></td><td><code>9.437</code></td></tr>
+<tr><td><code>64</code></td><td><code>3072</code></td><td><code>3072</code></td><td><code>0.194</code></td><td><code>6.243</code></td></tr>
+<tr><td><code>32</code></td><td><code>3072</code></td><td><code>3072</code></td><td><code>0.181</code></td><td><code>3.332</code></td></tr>
+<tr><td><code>16</code></td><td><code>3072</code></td><td><code>3072</code></td><td><code>0.181</code></td><td><code>1.666</code></td></tr>
+</tbody></table>
+</div>
+<p>Our goal will be to write an implementation which beats these non-tensor-core cuBLAS numbers on the <strong>following problem sizes:</strong></p>
+<ul>
+<li><code>3072 * 3072 * 3072</code></li>
+<li><code>2048 * 3072 * 3072</code></li>
+<li><code>1024 * 3072 * 3072</code></li>
+<li><code>512 * 3072 * 3072</code></li>
+<li><code>256 * 3072 * 3072</code></li>
+<li><code>128 * 3072 * 3072</code></li>
+</ul>
+<p>For the other problem sizes, your implementation should be correct, but it’s okay if it achieves worse performance than cuBLAS.</p>
+<blockquote>
+<p><strong>Deliverable:</strong> In the file <a href="https://github.com/accelerated-computing-class/lab6/blob/main/matmul_3.cu"><code>matmul_3.cu</code></a>, implement the function <code>launch_matmul_tensor</code>, and any associated kernels, so that when <code>size_i</code> is <code>3072</code>, <code>2048</code>, <code>1024</code>, <code>512</code>, <code>256</code>, or <code>128</code>, it achieves a higher throughput than our FMA-based cuBLAS baseline. To do this, you will (almost certainly) need to use tensor cores.</p>
+</blockquote>
+<p>To hit this performance target, you don’t need any techniques other than what we’ve already discussed in Lab 4, Lab 5, and this lab. All the suggestions from the previous labs continue to apply; a few especially important ones which you may find it helpful to keep in mind are:</p>
+<ul>
+<li>
+<p><strong>Avoid register spills</strong>, by not exceeding the register file capacity and by not accessing arrays using dynamic indices.</p>
+</li>
+<li>
+<p><strong>Use microtiles for register-level reuse.</strong> This is still relevant when using tensor cores! (But how should you structure the microtiles now?)</p>
+</li>
+<li>
+<p><strong>Overlap data movement with computation</strong>, using e.g. asynchronous copy instructions.</p>
+</li>
+<li>
+<p><strong>Avoid many-way bank conflicts</strong>, either by adjusting your data layouts or by adjusting your access patterns.</p>
+</li>
+</ul>
+<p>Good luck! Once you’ve implemented your optimized kernel, you can answer the final question of the lab:</p>
+<blockquote>
+<p><strong>Question 2 for final write-up:</strong> How does the performance of your implementation compare to the cuBLAS FMA baseline for each problem size? What fraction of theoretical peak throughput (calculated in Question 3.3) were you able to achieve for each problem size? What did you need to change about your kernel design in order to make use of tensor core instructions? What RRMSE numbers do you observe for your implementation, and how do they compare to the RRMSE numbers for your non-tensor-core implementation from Lab 5? Did you encounter any interesting bugs along the way? Finally, optionally: do you have any ideas for how it might be possible to develop an implementation which runs even faster?</p>
+</blockquote>
+<p>Congratulations – you’ve reached the end of the matrix multiplication labs for 6.S894! We hope you’ve had as much fun working through them as we’ve had creating them.</p>
+<p>You’re now well on your way to being able to implement the kinds of high-performance matrix multiplication kernels which power the world’s most computationally demanding deep learning applications, as well as important applications in many other domains.</p>
+<h2>Further Reading</h2>
+<p>If you want to learn more about matrix multiplication, there are a huge number of additional topics you may find it interesting to look into, including:</p>
+<ul>
+<li>
+<p><strong>Reduced precisions:</strong></p>
+<ul>
+<li>
+<p>The tensor cores on our GPU support 16-bit floating point (<a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-fragment-mma-1688">PTX docs</a>), 8-bit integer (<a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-fragment-mma-16816-i8-f8">PTX docs</a>), 8-bit floating point (<a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-fragment-mma-16832">PTX docs</a>) and 4-bit integer (<a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-fragment-mma-16832">PTX docs</a>) precisions. Handling these precisions efficiently poses new and interesting challenges, like needing to pack multiple values into each 32-bit word (<a href="https://docs.nvidia.com/cuda/cuda-math-api/cuda_math_api/struct____nv__bfloat162.html#struct____nv__bfloat162">CUDA docs</a>).</p>
+</li>
+<li>
+<p>NVIDIA’s newest Blackwell GPUs support exotic formats like 4-bit floating point and 6-bit (!) floating point (<a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-mma-scale-valid-comb-detail">link</a>).</p>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Fused and variant kernels:</strong></p>
+<ul>
+<li>It’s very common for high-performance machine learning applications to employ kernels which implement matrix multiplication <strong>combined with some other operation</strong>. This can look like applying an element-wise operation or a reduction on the final output of a matrix multiplication before writing it back to DRAM (<a href="https://dl.acm.org/doi/pdf/10.1145/3620666.3651369">relevant paper</a>), but it also includes even more complicated kernel designs like FlashAttention (<a href="https://arxiv.org/abs/2205.14135">link</a>, and <a href="https://arxiv.org/abs/2505.14201v1">state-of-the art version</a>) which embed matrix-multiply-like computations inside other kinds of workloads. An interesting recent example is FLUX (<a href="https://arxiv.org/abs/2406.06858v4">link</a>), which combines matrix multiplication with cross-GPU communication.</li>
+</ul>
+</li>
+<li>
+<p><strong>Higher-level tools:</strong></p>
+<ul>
+<li>In this lab we’ve been programming the GPU at a very low level of abstraction, but it’s also possible, and often preferable, to write matrix multiplications using higher-level CUDA libraries like CUTLASS (<a href="https://github.com/NVIDIA/cutlass">link</a>), or domain-specific languages like Triton (<a href="https://triton-lang.org/main/index.html">link</a>). Many of the performance optimizations used in the implementations of those tools are techniques that you now know how to implement by hand!</li>
+</ul>
+</li>
+<li>
+<p><strong>Improved scheduling and partitioning:</strong></p>
+<ul>
+<li>NVIDIA’s best-performing matrix multiply kernels use techniques slightly more advanced than (but very similar to!) the ideas we’ve discussed in these past three labs. Some of the key differences from the designs we’ve covered include overlapping data movement with computation using software pipelines with more than two stages (i.e. staging data into a ring buffer rather than double-buffering it) (<a href="https://github.com/NVIDIA/cutlass/blob/main/media/docs/cpp/efficient_gemm.md">link</a>), and using partitioning strategies which achieve better load-balancing than split-k, such as “stream-k” (<a href="https://arxiv.org/abs/2301.03598">link</a>).</li>
+</ul>
+</li>
+<li>
+<p><strong>Newer GPUs:</strong></p>
+<ul>
+<li>NVIDIA’s Hopper generation of GPUs includes several new features which are relevant when writing matrix multiply kernels. Notably, these include an evolved version of asynchronous copy instructions using something called the “tensor memory accelerator” (TMA) (<a href="https://developer.nvidia.com/blog/nvidia-hopper-architecture-in-depth/">link</a>), as well as new extremely high-throughput tensor core instructions which run asynchronously, can load their inputs directly from shared memory, and work at a granularity of four warps at a time (<a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#asynchronous-warpgroup-level-matrix-instructions-wgmma-mma">PTX docs</a>). Even though these features are different than the ones we’ve covered in this course, we hope you feel that you’re now very well-prepared to figure out how to use them (we think you are!).</li>
+</ul>
+</li>
+<li>
+<p><strong>Alternative platforms:</strong></p>
+<ul>
+<li>Because deep learning is such an active space, there’s now a veritable zoo of different hardware accelerator platforms all designed to multiply matrices. Spanning various levels of readiness, performance, and public availability, these include: <a href="https://cloud.google.com/tpu">Google’s TPUs</a>, <a href="https://www.amd.com/en/products/accelerators/instinct/mi350/mi350x.html">AMD’s GPUs</a>, <a href="https://www.apple.com/newsroom/2024/05/apple-introduces-m4-chip/">Apple’s M-series chips</a>, <a href="https://www.intel.com/content/www/us/en/products/details/processors/ai-accelerators/gaudi-overview.html?cid=sem&amp;source=sa360&amp;campid=2024_ao_cbu_us_gmocoma_gmocrbu_awa_text-link_brand_exact_cd_HQ-ai-gaudi_3500268603_google_b2b_is_non-pbm_intel&amp;ad_group=AI_Brand-Gaudi_Gaudi_Exact&amp;intel_term=intel+gaudi&amp;sa360id=43700079829610445&amp;gad_source=1&amp;gclid=CjwKCAjwjsi4BhB5EiwAFAL0YMUtHoQrSRnN4bQqFSg3SvR9uBaTz8x4oA3q6AbsQUgtmOb8VOlOkxoCc9IQAvD_BwE&amp;gclsrc=aw.ds">Intel’s Gaudi</a>, <a href="https://www.graphcore.ai/bow-processors">Graphcore’s IPUs</a>, <a href="https://aws.amazon.com/machine-learning/trainium/">Amazon’s Trainium</a>, <a href="https://tenstorrent.com/">Tenstorrent’s various accelerators</a>, <a href="https://cerebras.ai/condor-galaxy">Cerebras’s Wafer-Scale Engine</a>, <a href="https://groq.com/groq-tensor-streaming-processor-architecture-is-radically-different/">Groq’s TSPs</a>, <a href="https://en.wikipedia.org/wiki/Tesla_Dojo">the chips in Tesla’s Dojo supercomputer</a>, <a href="https://www.etched.com/">Etched’s Sohu</a>, <a href="https://sambanova.ai/technology/sn40l-rdu-ai-chip">SambaNova’s RDU</a>, <a href="https://azure.microsoft.com/en-us/blog/azure-maia-for-the-era-of-ai-from-silicon-to-software-to-systems/">Microsoft’s MAIA</a>, and <a href="https://ai.meta.com/blog/next-generation-meta-training-inference-accelerator-AI-MTIA/">Meta’s MTIA</a> – and we’re sure we forgot some! You may get a chance to program some of these in the future – and although they’re not NVIDIA GPUs, many of the fundamental ideas we’ve covered should be relevant as you learn to program <strong>any</strong> of them!</li>
+</ul>
+</li>
+</ul>
+<p>In a few weeks, we’ll start discussing ideas for final projects or the final labs (whichever you’re interested in). If any of the matrix-multiplication-related topics above sound interesting to you, keep them in mind when you’re thinking about what you might want to work on for your final project, and keep all these ideas in mind for the optional final labs!</p>
+<hr />
+<div class="footnote-definition" id="cutlass"><sup class="footnote-definition-label">1</sup>
+<p>NVIDIA has developed an external library called <a href="https://github.com/NVIDIA/cutlass">“CUTLASS”</a> which provides a higher-level C++ interface for interacting with tensor cores. However, CUTLASS is built on top of many layers of complicated C++ template metaprogramming machinery, and in the course staff’s experience, accessing tensor cores directly via PTX provides better clarity about what’s actually going on. Libraries like CUTLASS can be convenient in practice, but they’re never necessary; anything you can do using CUTLASS, you can also do yourself using inline PTX.</p>
+</div>
+<div class="footnote-definition" id="lop3_opt"><sup class="footnote-definition-label">5</sup>
+<p>In practice, thanks to compiler optimizations in the PTX-to-SASS translation step, if you write CUDA code which implements three-way bit-wise operations in terms of normal two-way bit-wise operators like <code>(a &amp; b) | c</code>, the compiler will sometimes end up generating fast <code>LOP3</code> instructions for you at the SASS level anyway. However, explicitly invoking the <code>lop3</code> instruction via inline PTX provides more control.</p>
+</div>
+<div class="footnote-definition" id="wmma"><sup class="footnote-definition-label">2</sup>
+<p>In PTX there is also an API called <a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-instructions-wmma-mma"><code>wmma</code></a>, which superficially appears to offer yet another way to use the machine’s tensor cores. However, inspecting the SASS generated for <code>wmma.mma</code> instructions reveals that, on our GPU, it ultimately compiles to the same <code>HMMA</code> instructions which are already exposed through the <code>mma</code> API we’re using for this lab. As far as we can tell, this alternate <code>wmma</code> API exists mostly for historical reasons.</p>
+</div>
+<div class="footnote-definition" id="illusion"><sup class="footnote-definition-label">3</sup>
+<p>Tensor core instructions aren’t the only instructions on the GPU with warp-level semantics; there are also <a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/#warp-shuffle-functions">warp-level reductions and warp-level permutations</a>, among others. <a href="https://developer.nvidia.com/blog/using-cuda-warp-level-primitives/">This blog post</a> has some interesting commentary on such warp-level functions and their history.</p>
+</div>
+<div class="footnote-definition" id="cublas_fp32"><sup class="footnote-definition-label">4</sup>
+<p>We make sure the cuBLAS kernels we’re calling won’t use tensor cores by explicitly requesting matrix multiplies in full FP32 precision as opposed to TF32 precision.</p>
+</div>
+</main><footer><p><a href="https://mit.edu">Massachusetts Institute of Technology</a> —
+<a href="https://www.eecs.mit.edu">Department of Electrical Engineering and Computer Science</a> | <a href="https://accessibility.mit.edu">Accessibility</a></p>
+</footer></body></html>
