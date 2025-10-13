@@ -149,9 +149,9 @@
 <p><strong>Deliverable:</strong> In the file <code>exercise_mma.cu</code>, implement the function <code>mma_16x8x8_kernel</code> to perform a single <code>16 * 8 * 8</code> matrix multiplication on the matrices stored in <code>a</code> and <code>b</code>, and accumulate the results of that matrix multiplication into <code>c</code>, using the tensor core instruction <code>mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32</code>. In addition to invoking this tensor core instruction, your kernel can use whatever additional CUDA logic you like to compute indices, move data around, etc. The data in <code>a</code>, <code>b</code>, and <code>c</code> is stored in row-major layout in global memory. Note that the kernel <code>mma_16x8x8_kernel</code> will be launched with exactly 32 CUDA threads (one warp).</p>
 </blockquote>
 <blockquote>
-<p><strong>Prelab Question:</strong> Look at the assembly code generated for your <code>exercise_mma.cu</code> file. What does the generated SASS look like? Can you find the tensor core instruction? Paste the relevant chunk of SASS in your answer.</p>
+<p><strong>Prelab Question:</strong> Look at the assembly code generated for your <code>exercise_mma.cu</code> file. What does the generated SASS look like? Can you find the tensor core instruction? Paste the relevant chunk of SASS in your answer and the output when running <code>exercise_mma.cu</code>.</p>
 </blockquote>
-<h2>Part 3: Accelerating Matrix Multiply</h2>
+<h2>Part 1: Accelerating Matrix Multiply</h2>
 <p>Now that we’ve seen how to invoke tensor core instructions on our GPU, we’re ready to integrate them into our full matrix multiply kernel!</p>
 <p>For this lab, we’ll be focusing on just a subset of the problem sizes from Lab 5. Here they are:</p>
 <div class="table-container"><table><thead><tr><th><code>size_i</code></th><th><code>size_j</code></th><th><code>size_k</code></th></tr></thead><tbody>
